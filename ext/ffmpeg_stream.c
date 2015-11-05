@@ -156,9 +156,9 @@ extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_cont
     int frame_complete = 0;
     int next;
 
-    int buf_size = AVCODEC_MAX_AUDIO_FRAME_SIZE;
-    int tot_size = 0;
-    char *raw_data = malloc(buf_size);
+    int buf_cap = AVCODEC_MAX_AUDIO_FRAME_SIZE;
+    int buf_size = 0;
+    uint8_t *raw_data = malloc(buf_cap);
     while(!frame_complete &&
             0 == (next = next_packet_for_stream(format_context, stream_index, decoding_packet))) {
         remaining = decoding_packet->size;
@@ -166,28 +166,44 @@ extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_cont
 
         while(remaining > 0) {
 
-            char *out_buffer = malloc(buf_size);
             int out_size = AVCODEC_MAX_AUDIO_FRAME_SIZE;
+            uint8_t *out_buffer = malloc(out_size);
             decoded = avcodec_decode_audio2(codec_context, (int16_t*)out_buffer, 
                 &out_size, databuffer, remaining);
 
             remaining -= decoded;
             databuffer += decoded;
+        
+            //printf("%d %d\n", out_size, decoded);
 
-            memcpy(raw_data+tot_size, out_buffer, decoded);
-            tot_size += decoded;
+            //memcpy(raw_data+buf_size, out_buffer, decoded);
+            //buf_size += decoded;
+            if ((buf_size+out_size)>=buf_cap){
+                buf_cap *= 2;
+                uint8_t *tmp = malloc(buf_cap);
+                memcpy(tmp, raw_data, buf_size);
+                free(raw_data);
+                raw_data = tmp;
+                tmp = NULL;
+            }
+            memcpy(raw_data+buf_size, out_buffer, out_size);
+            buf_size += out_size;
 
             if (out_buffer) {
                 free(out_buffer);
                 out_buffer = NULL;
             }
         }
+
+        printf("[ %d %d %d ] -- %d\n", frame_complete, next, buf_size, buf_cap);
     }
+
+    printf("[ %d %d %d ] -- END\n", frame_complete, next, buf_size);
 
     VALUE ret = Qnil;
 
-    if (tot_size != 0)
-        ret = rb_str_new(raw_data, tot_size);
+    if (buf_size != 0)
+        ret = rb_str_new(raw_data, buf_size);
 
     if (raw_data) {
         free(raw_data);
