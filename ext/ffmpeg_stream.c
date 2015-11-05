@@ -13,9 +13,9 @@ next_packet(AVFormatContext * format_context, AVPacket * packet)
     if(packet->data != NULL)
         av_free_packet(packet);
 
-    if(av_read_frame(format_context, packet) < 0) {
+    int ret = av_read_frame(format_context, packet);
+    if(ret < 0)
         return -1;
-    }
     
     return 0;
 }
@@ -27,7 +27,7 @@ next_packet_for_stream(AVFormatContext * format_context, int stream_index, AVPac
     do {
         ret = next_packet(format_context, packet);
     } while(packet->stream_index != stream_index && ret == 0);
-    
+
     return ret;
 }
 
@@ -155,31 +155,44 @@ extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_cont
     int decoded;
     int frame_complete = 0;
     int next;
-    char * out_buffer;
-    int out_buffer_size;
 
+    int buf_size = AVCODEC_MAX_AUDIO_FRAME_SIZE;
+    int tot_size = 0;
+    char *raw_data = malloc(buf_size);
     while(!frame_complete &&
             0 == (next = next_packet_for_stream(format_context, stream_index, decoding_packet))) {
         remaining = decoding_packet->size;
         databuffer = decoding_packet->data;
 
-        out_buffer_size = remaining;
-        out_buffer = malloc(out_buffer_size);
         while(remaining > 0) {
-            decoded = avcodec_decode_audio2(codec_context, (int16_t*)out_buffer, &out_buffer_size,
-                databuffer, remaining);
+
+            char *out_buffer = malloc(buf_size);
+            int out_size = AVCODEC_MAX_AUDIO_FRAME_SIZE;
+            decoded = avcodec_decode_audio2(codec_context, (int16_t*)out_buffer, 
+                &out_size, databuffer, remaining);
+
             remaining -= decoded;
             databuffer += decoded;
+
+            memcpy(raw_data+tot_size, out_buffer, decoded);
+            tot_size += decoded;
+
+            if (out_buffer) {
+                free(out_buffer);
+                out_buffer = NULL;
+            }
         }
     }
 
     VALUE ret = Qnil;
 
-    if (next == 0)
-        ret = rb_str_new(out_buffer, out_buffer_size);
+    if (tot_size != 0)
+        ret = rb_str_new(raw_data, tot_size);
 
-    free(out_buffer);
-    out_buffer = NULL;
+    if (raw_data) {
+        free(raw_data);
+        raw_data = NULL;
+    }
 
     return ret;
 }
@@ -187,6 +200,7 @@ extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_cont
 static VALUE
 stream_decode_audio(VALUE self)
 {
+
     AVFormatContext * format_context = get_format_context(rb_iv_get(self, "@format"));
     AVStream * stream = get_stream(self);
 
@@ -202,8 +216,7 @@ stream_decode_audio(VALUE self)
 
     AVPacket decoding_packet;
     av_init_packet(&decoding_packet);
-
-    return extract_next_audio(format_context, codec_context, stream_index, &decoding_packet);
+    return extract_next_audio(format_context, codec_context, stream->index, &decoding_packet);
 }
 
 static VALUE
