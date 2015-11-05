@@ -1,4 +1,4 @@
-/* Copyright (c)2008 Antonin Amand.
+    /* Copyright (c)2008 Antonin Amand.
  * Licensed under the Ruby License. See LICENSE for details.
  *
  */
@@ -22,7 +22,7 @@ input_format_initialize(VALUE self, VALUE filename)
     ap->prealloced_context = 1;
     ap->width = 0;
     ap->height = 0;
-    ap->pix_fmt = PIX_FMT_NONE;
+    ap->pix_fmt = PIX_FMT_YUV420P;
     
     if (Qfalse == rb_funcall(rb_cFile, rb_intern("file?"), 1, filename))
         rb_raise(rb_eArgError,

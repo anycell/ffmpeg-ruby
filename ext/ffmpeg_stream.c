@@ -141,6 +141,71 @@ extract_next_frame(AVFormatContext * format_context, AVCodecContext * codec_cont
     return next;
 }
 
+static VALUE 
+extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_context, 
+    int stream_index, AVPacket * decoding_packet)
+{
+    if (NULL == codec_context->codec) {
+            rb_fatal("codec should have already been opened");
+    }
+    
+    uint8_t * databuffer;
+
+    int remaining = 0;
+    int decoded;
+    int frame_complete = 0;
+    int next;
+    char * out_buffer;
+    int out_buffer_size;
+
+    while(!frame_complete &&
+            0 == (next = next_packet_for_stream(format_context, stream_index, decoding_packet))) {
+        remaining = decoding_packet->size;
+        databuffer = decoding_packet->data;
+
+        out_buffer_size = remaining;
+        out_buffer = malloc(out_buffer_size);
+        while(remaining > 0) {
+            decoded = avcodec_decode_audio2(codec_context, (int16_t*)out_buffer, &out_buffer_size,
+                databuffer, remaining);
+            remaining -= decoded;
+            databuffer += decoded;
+        }
+    }
+
+    VALUE ret = Qnil;
+
+    if (next == 0)
+        ret = rb_str_new(out_buffer, out_buffer_size);
+
+    free(out_buffer);
+    out_buffer = NULL;
+
+    return ret;
+}
+
+static VALUE
+stream_decode_audio(VALUE self)
+{
+    AVFormatContext * format_context = get_format_context(rb_iv_get(self, "@format"));
+    AVStream * stream = get_stream(self);
+
+    AVCodecContext * codec_context = stream->codec;
+
+    if (!codec_context->codec) {
+        AVCodec * codec = avcodec_find_decoder(codec_context->codec_id);
+        if (!codec)
+            rb_raise(rb_eRuntimeError, "error codec not found");
+        if (avcodec_open(codec_context, codec) < 0)
+            rb_raise(rb_eRuntimeError, "error while opening codec : %s", codec->name);
+    }
+
+    AVPacket decoding_packet;
+    av_init_packet(&decoding_packet);
+
+    return extract_next_audio(format_context, codec_context, stream_index, &decoding_packet);
+}
+
 static VALUE
 stream_decode_frame(VALUE self)
 {
@@ -158,10 +223,14 @@ stream_decode_frame(VALUE self)
             rb_raise(rb_eRuntimeError, "error while opening codec : %s", codec->name);
     }
     
+   // AVFrame * tmp_frame;
+  //  get_buffer(codec_context, tmp_frame);
+
     VALUE rb_frame = rb_funcall(rb_const_get(rb_mFFMPEG, rb_intern("Frame")),
-        rb_intern("new"), 3,
+        rb_intern("new"), 4,
         INT2NUM(codec_context->width),
         INT2NUM(codec_context->height),
+        INT2NUM(0),
         INT2NUM(codec_context->pix_fmt));
     
     AVFrame * frame = get_frame(rb_frame);
@@ -185,8 +254,10 @@ stream_decode_frame(VALUE self)
             );
         } while (ret == 0);
     } else {
-        extract_next_frame(format_context, stream->codec,
+        int ret = extract_next_frame(format_context, stream->codec,
             stream->index, frame, &decoding_packet);
+        if (ret != 0)
+            return Qnil;
         return rb_frame;
     }
     
@@ -237,5 +308,6 @@ Init_FFMPEGStream()
     rb_define_method(rb_cFFMPEGStream, "frame_rate", stream_frame_rate, 0);
     rb_define_method(rb_cFFMPEGStream, "position", stream_position, 0);
     rb_define_method(rb_cFFMPEGStream, "decode_frame", stream_decode_frame, 0);
+    rb_define_method(rb_cFFMPEGStream, "decode_audio", stream_decode_audio, 0);
     rb_define_method(rb_cFFMPEGStream, "seek", stream_seek, 1);
 }

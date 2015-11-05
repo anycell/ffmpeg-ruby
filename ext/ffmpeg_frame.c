@@ -34,6 +34,8 @@ frame_to_rgb24(VALUE self)
     int width = NUM2INT(rb_iv_get(self, "@width"));
     int height = NUM2INT(rb_iv_get(self, "@height"));
     int pixel_format = NUM2INT(rb_iv_get(self, "@pixel_format"));
+
+    printf("%d, %d, %d\n", width, height, pixel_format);
     
     struct SwsContext *img_convert_ctx = NULL;
     img_convert_ctx = sws_getContext(width, height, pixel_format,
@@ -47,7 +49,13 @@ frame_to_rgb24(VALUE self)
     
     av_free(img_convert_ctx);
     
-    return build_frame_object(to, width, height, PIX_FMT_RGB24);
+    return build_frame_object(to, width, height, 0, PIX_FMT_RGB24);
+}
+
+static VALUE
+frame_to_yuv(VALUE self)
+{
+    return self;
 }
 
 static VALUE
@@ -68,7 +76,29 @@ frame_to_ppm(VALUE self)
     
     memcpy(data_string + strlen(header), frame->data[0], frame->linesize[0] * height);
     
-    return rb_str_new(data_string, size);
+
+    VALUE ret = rb_str_new(data_string, size);
+    free(data_string);
+    data_string = NULL;
+    return ret;
+}
+
+static VALUE
+frame_to_rawdata(VALUE self)
+{
+    AVFrame *frame = get_frame(self);
+
+    int width = NUM2INT(rb_iv_get(self, "@width"));
+    int height = NUM2INT(rb_iv_get(self, "@height"));
+
+    int size = frame->linesize[0] * height;
+    char *data_string = malloc(size);
+    memcpy(data_string, frame->data[0], size);
+
+    VALUE ret = rb_str_new(data_string, size);
+    free(data_string);
+    data_string = NULL;
+    return ret;
 }
 
 static void
@@ -88,23 +118,25 @@ alloc_frame(VALUE klass)
 }
 
 static VALUE
-frame_initialize(VALUE self, VALUE width, VALUE height, VALUE pixel_format)
+frame_initialize(VALUE self, VALUE width, VALUE height, VALUE stride, VALUE pixel_format)
 {
     //fprintf(stderr, "new frame : %dx%d, pix:%d\n", NUM2INT(width), NUM2INT(height), NUM2INT(pixel_format));
     rb_iv_set(self, "@width", width);
     rb_iv_set(self, "@height", height);
     rb_iv_set(self, "@pixel_format", pixel_format);
+    rb_iv_set(self, "@stride", stride);
     return self;
 }
 
 VALUE
-build_frame_object(AVFrame * frame, int width, int height, int pixel_format)
+build_frame_object(AVFrame * frame, int width, int height, int stride, int pixel_format)
 {
     VALUE obj = Data_Wrap_Struct(rb_cFFMPEGFrame, 0, free_frame, frame);
     
     return frame_initialize(obj,
         INT2FIX(width),
         INT2FIX(height),
+        INT2FIX(stride),
         INT2FIX(pixel_format));
 }
 
@@ -113,12 +145,16 @@ Init_FFMPEGFrame() {
     rb_cFFMPEGFrame = rb_define_class_under(rb_mFFMPEG, "Frame", rb_cObject);
     
     rb_define_alloc_func(rb_cFFMPEGFrame, alloc_frame);
-    rb_define_method(rb_cFFMPEGFrame, "initialize", frame_initialize, 3);
+    rb_define_method(rb_cFFMPEGFrame, "initialize", frame_initialize, 4);
     
     rb_funcall(rb_cFFMPEGFrame, rb_intern("attr_reader"), 1, rb_sym("width"));
     rb_funcall(rb_cFFMPEGFrame, rb_intern("attr_reader"), 1, rb_sym("height"));
+    rb_funcall(rb_cFFMPEGFrame, rb_intern("attr_reader"), 1, rb_sym("stride"));
     rb_funcall(rb_cFFMPEGFrame, rb_intern("attr_reader"), 1, rb_sym("pixel_format"));
     
     rb_define_method(rb_cFFMPEGFrame, "to_rgb24", frame_to_rgb24, 0);
     rb_define_method(rb_cFFMPEGFrame, "to_ppm", frame_to_ppm, 0);
+    //rb_define_method(rb_cFFMPEGFrame, "to_yuv", frame_to_yuv, 0);
+    rb_define_method(rb_cFFMPEGFrame, "to_gray", frame_to_rawdata, 0);  
+    //rb_define_method()
 }

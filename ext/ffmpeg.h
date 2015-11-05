@@ -38,6 +38,6 @@ RUBY_EXTERN void Init_FFMPEGFrame();
 
 VALUE build_stream_object(AVStream * stream, VALUE format);
 VALUE build_codec_object(AVCodecContext * codec);
-VALUE build_frame_object(AVFrame * frame, int width, int height, int pixel_format);
+VALUE build_frame_object(AVFrame * frame, int width, int height, int stride, int pixel_format);
 
 #endif

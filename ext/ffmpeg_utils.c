@@ -37,7 +37,7 @@ AVCodecContext * get_codec_context(VALUE self)
 
 AVFrame * get_frame(VALUE self)
 {
-     AVFrame * frame = NULL;
+    AVFrame * frame = NULL;
     Data_Get_Struct(self, AVFrame, frame);
     if (NULL == frame) {
         rb_fatal("FFMPEG internal error\n");
