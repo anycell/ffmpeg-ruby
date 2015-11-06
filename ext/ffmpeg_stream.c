@@ -158,7 +158,14 @@ extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_cont
 
     int buf_cap = AVCODEC_MAX_AUDIO_FRAME_SIZE;
     int buf_size = 0;
-    uint8_t *raw_data = malloc(buf_cap);
+
+    ReSampleContext * re_codec_context = 
+        av_audio_resample_init(codec_context->channels, 
+            codec_context->channels,
+            16000, codec_context->sample_rate,
+            SAMPLE_FMT_S16, SAMPLE_FMT_S16, 16, 10, 0, 1.0);
+
+    char *raw_data = malloc(buf_cap);
     while(!frame_complete &&
             0 == (next = next_packet_for_stream(format_context, stream_index, decoding_packet))) {
         remaining = decoding_packet->size;
@@ -167,17 +174,13 @@ extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_cont
         while(remaining > 0) {
 
             int out_size = AVCODEC_MAX_AUDIO_FRAME_SIZE;
-            uint8_t *out_buffer = malloc(out_size);
+            char *out_buffer = malloc(out_size);
             decoded = avcodec_decode_audio2(codec_context, (int16_t*)out_buffer, 
                 &out_size, databuffer, remaining);
 
             remaining -= decoded;
             databuffer += decoded;
         
-            //printf("%d %d\n", out_size, decoded);
-
-            //memcpy(raw_data+buf_size, out_buffer, decoded);
-            //buf_size += decoded;
             if ((buf_size+out_size)>=buf_cap){
                 buf_cap *= 2;
                 uint8_t *tmp = malloc(buf_cap);
@@ -194,20 +197,26 @@ extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_cont
                 out_buffer = NULL;
             }
         }
-
-        printf("[ %d %d %d ] -- %d\n", frame_complete, next, buf_size, buf_cap);
     }
-
-    printf("[ %d %d %d ] -- END\n", frame_complete, next, buf_size);
 
     VALUE ret = Qnil;
 
+    char *resample_buffer = malloc(buf_cap);
+    int sample_num = buf_size/(codec_context->channels*2);
+    int resample_size = audio_resample(re_codec_context, (int16_t *)resample_buffer, raw_data, sample_num);
+    //printf("%d %d---\n", buf_size, resample_size*2);
+
     if (buf_size != 0)
-        ret = rb_str_new(raw_data, buf_size);
+        ret = rb_str_new(resample_buffer, resample_size*2*codec_context->channels);
 
     if (raw_data) {
         free(raw_data);
         raw_data = NULL;
+    }
+
+    if (resample_buffer) {
+        free(resample_buffer);
+        resample_buffer = NULL;
     }
 
     return ret;
