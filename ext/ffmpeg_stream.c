@@ -143,7 +143,7 @@ extract_next_frame(AVFormatContext * format_context, AVCodecContext * codec_cont
 
 static VALUE 
 extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_context, 
-    int stream_index, AVPacket * decoding_packet, )
+    int stream_index, AVPacket * decoding_packet)
 {
     if (NULL == codec_context->codec) {
             rb_fatal("codec should have already been opened");
@@ -196,9 +196,6 @@ extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_cont
                 free(out_buffer);
                 out_buffer = NULL;
             }
-
-            if (re_codec_context)
-                audio_resample_close(re_codec_context);
         }
     }
 
@@ -207,6 +204,7 @@ extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_cont
     char *resample_buffer = malloc(buf_cap);
     int sample_num = buf_size/(codec_context->channels*2);
     int resample_size = audio_resample(re_codec_context, (int16_t *)resample_buffer, raw_data, sample_num);
+    //printf("%d %d---\n", buf_size, resample_size*2);
 
     if (buf_size != 0)
         ret = rb_str_new(resample_buffer, resample_size*2*codec_context->channels);
