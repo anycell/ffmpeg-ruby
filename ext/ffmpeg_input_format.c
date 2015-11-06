@@ -1,4 +1,4 @@
-    /* Copyright (c)2008 Antonin Amand.
+/* Copyright (c)2008 Antonin Amand.
  * Licensed under the Ruby License. See LICENSE for details.
  *
  */

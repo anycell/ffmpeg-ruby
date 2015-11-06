@@ -124,6 +124,8 @@ stream_resample(char *src_buf, char *dst_buf, int src_c,
     ReSampleContext * re_codec_context = audio_resample_init(dst_c, src_c, dst_s, src_s);
     
     dst_buf = malloc(dst_size);
+    if (dst_buf <= 0)
+        rb_raise(rb_eRuntimeError, "error allocate memory when resampling");
     int nb_samples = src_size/(src_c * 2);
     int resample_size = audio_resample(re_codec_context, (int16_t *)dst_buf, (int16_t *)src_buf, nb_samples);
     resample_size *= (dst_c * 2);
@@ -207,12 +209,11 @@ extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_cont
             if ((buf_size+out_size)>=buf_cap){
                 buf_cap *= 2;
                 char *tmp = malloc(buf_cap);
+                if (tmp <= 0)
+                    rb_raise(rb_eRuntimeError, "error allocate memory when extracting audio");
                 memcpy(tmp, *raw_data, buf_size);
-                //printf("before free %d %d\n", raw_data, tmp);
                 free(*raw_data);
-                //printf("after free %d %d\n", raw_data, tmp);
                 *raw_data = tmp;
-                //printf("new %d %d\n", raw_data, tmp);
                 tmp = NULL;
             }
             memcpy(*raw_data+buf_size, out_buffer, out_size);
@@ -277,6 +278,8 @@ stream_decode_audio(VALUE self, VALUE rb_channel, VALUE rb_sample_rate)
         raw_data = NULL;
     }
 
+
+    av_free_packet(&decoding_packet);
     return audio_stream;
 }
 
@@ -296,9 +299,6 @@ stream_decode_frame(VALUE self)
         if (avcodec_open(codec_context, codec) < 0)
             rb_raise(rb_eRuntimeError, "error while opening codec : %s", codec->name);
     }
-    
-   // AVFrame * tmp_frame;
-  //  get_buffer(codec_context, tmp_frame);
 
     VALUE rb_frame = rb_funcall(rb_const_get(rb_mFFMPEG, rb_intern("Frame")),
         rb_intern("new"), 4,
@@ -330,11 +330,14 @@ stream_decode_frame(VALUE self)
     } else {
         int ret = extract_next_frame(format_context, stream->codec,
             stream->index, frame, &decoding_packet);
+
+        av_free_packet(&decoding_packet);
         if (ret != 0)
             return Qnil;
         return rb_frame;
     }
     
+    av_free_packet(&decoding_packet);
     return self;
 }
 
@@ -353,6 +356,7 @@ static VALUE
 alloc_stream(VALUE klass)
 {
     AVStream * stream = av_new_stream(NULL, 0);
+    printf("AVStream addr %d\n", stream);
     return Data_Wrap_Struct(rb_cFFMPEGStream, 0, 0, stream);
 }
 
