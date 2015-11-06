@@ -107,6 +107,33 @@ stream_position(VALUE self)
     return rb_float_new(decoding_packet.pts * (double)av_q2d(stream->time_base));
 }
 
+// src_buf: origin audio data
+// dst_buf: resample audio data
+// src_c:   origin channel
+// dst_c:   resample channel
+// src_s:   origin sample rate
+// dst_s:   resample sample rate
+// src_size:origin audio data buffer size
+// dst_size:resample audio data buffer size
+static int
+stream_resample(char *src_buf, char *dst_buf, int src_c, 
+    int dst_c, int src_s, int dst_s, int src_size, int dst_size)
+{
+    printf("[chan : %d, rate : %d, init_size : %d, src_chan : %d, src_rate : %d, src_size : %d, src_buf : %d]\n",
+                dst_c, dst_s, dst_size, src_c, src_s, src_size, src_buf);
+    ReSampleContext * re_codec_context = audio_resample_init(dst_c, src_c, dst_s, src_s);
+    
+    dst_buf = malloc(dst_size);
+    int nb_samples = src_size/(src_c * 2);
+    int resample_size = audio_resample(re_codec_context, (int16_t *)dst_buf, (int16_t *)src_buf, nb_samples);
+    resample_size *= (dst_c * 2);
+
+    if (re_codec_context)
+        audio_resample_close(re_codec_context);
+
+    return resample_size;
+}
+
 static int
 extract_next_frame(AVFormatContext * format_context, AVCodecContext * codec_context,
     int stream_index, AVFrame * frame, AVPacket * decoding_packet)
@@ -141,9 +168,10 @@ extract_next_frame(AVFormatContext * format_context, AVCodecContext * codec_cont
     return next;
 }
 
-static VALUE 
+// return audio buffer size
+static int 
 extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_context, 
-    int stream_index, AVPacket * decoding_packet)
+    int stream_index, char** raw_data, AVPacket * decoding_packet)
 {
     if (NULL == codec_context->codec) {
             rb_fatal("codec should have already been opened");
@@ -158,16 +186,11 @@ extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_cont
 
     int buf_cap = AVCODEC_MAX_AUDIO_FRAME_SIZE;
     int buf_size = 0;
+    *raw_data = malloc(buf_cap);
 
-    ReSampleContext * re_codec_context = 
-        av_audio_resample_init(codec_context->channels, 
-            codec_context->channels,
-            16000, codec_context->sample_rate,
-            SAMPLE_FMT_S16, SAMPLE_FMT_S16, 16, 10, 0, 1.0);
-
-    char *raw_data = malloc(buf_cap);
     while(!frame_complete &&
             0 == (next = next_packet_for_stream(format_context, stream_index, decoding_packet))) {
+        
         remaining = decoding_packet->size;
         databuffer = decoding_packet->data;
 
@@ -183,13 +206,16 @@ extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_cont
         
             if ((buf_size+out_size)>=buf_cap){
                 buf_cap *= 2;
-                uint8_t *tmp = malloc(buf_cap);
-                memcpy(tmp, raw_data, buf_size);
-                free(raw_data);
-                raw_data = tmp;
+                char *tmp = malloc(buf_cap);
+                memcpy(tmp, *raw_data, buf_size);
+                //printf("before free %d %d\n", raw_data, tmp);
+                free(*raw_data);
+                //printf("after free %d %d\n", raw_data, tmp);
+                *raw_data = tmp;
+                //printf("new %d %d\n", raw_data, tmp);
                 tmp = NULL;
             }
-            memcpy(raw_data+buf_size, out_buffer, out_size);
+            memcpy(*raw_data+buf_size, out_buffer, out_size);
             buf_size += out_size;
 
             if (out_buffer) {
@@ -199,31 +225,11 @@ extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_cont
         }
     }
 
-    VALUE ret = Qnil;
-
-    char *resample_buffer = malloc(buf_cap);
-    int sample_num = buf_size/(codec_context->channels*2);
-    int resample_size = audio_resample(re_codec_context, (int16_t *)resample_buffer, raw_data, sample_num);
-    //printf("%d %d---\n", buf_size, resample_size*2);
-
-    if (buf_size != 0)
-        ret = rb_str_new(resample_buffer, resample_size*2*codec_context->channels);
-
-    if (raw_data) {
-        free(raw_data);
-        raw_data = NULL;
-    }
-
-    if (resample_buffer) {
-        free(resample_buffer);
-        resample_buffer = NULL;
-    }
-
-    return ret;
+    return buf_size;
 }
 
 static VALUE
-stream_decode_audio(VALUE self)
+stream_decode_audio(VALUE self, VALUE rb_channel, VALUE rb_sample_rate)
 {
 
     AVFormatContext * format_context = get_format_context(rb_iv_get(self, "@format"));
@@ -241,7 +247,37 @@ stream_decode_audio(VALUE self)
 
     AVPacket decoding_packet;
     av_init_packet(&decoding_packet);
-    return extract_next_audio(format_context, codec_context, stream->index, &decoding_packet);
+
+    char *raw_data;
+    VALUE audio_stream = Qnil;
+    int size = extract_next_audio(format_context, codec_context, stream->index, &raw_data, &decoding_packet);
+    if (size > 0) {
+        int channel = FIX2INT(rb_channel);
+        int sample_rate = FIX2INT(rb_sample_rate);
+        if (channel || sample_rate) {
+            char *resample_data;
+            int src_chan = codec_context->channels;
+            int src_rate = codec_context->sample_rate;
+
+            channel = (channel != 0 ? channel : src_chan);
+            sample_rate = (sample_rate != 0 ? sample_rate : src_rate);
+
+            int init_sample_size = channel * sample_rate * (1+(size / (src_chan * src_rate)));
+            int sample_size = stream_resample(raw_data, resample_data, src_chan, channel,
+                                src_rate, sample_rate, size, init_sample_size);
+            if (sample_size > 0) {
+                free(raw_data);
+                raw_data = resample_data;
+                resample_data = NULL;
+                size = sample_size;
+            }
+        }
+        audio_stream = rb_str_new(raw_data, size);
+        free(raw_data);
+        raw_data = NULL;
+    }
+
+    return audio_stream;
 }
 
 static VALUE
@@ -346,6 +382,6 @@ Init_FFMPEGStream()
     rb_define_method(rb_cFFMPEGStream, "frame_rate", stream_frame_rate, 0);
     rb_define_method(rb_cFFMPEGStream, "position", stream_position, 0);
     rb_define_method(rb_cFFMPEGStream, "decode_frame", stream_decode_frame, 0);
-    rb_define_method(rb_cFFMPEGStream, "decode_audio", stream_decode_audio, 0);
+    rb_define_method(rb_cFFMPEGStream, "decode_audio", stream_decode_audio, 2);
     rb_define_method(rb_cFFMPEGStream, "seek", stream_seek, 1);
 }
