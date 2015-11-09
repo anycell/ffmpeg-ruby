@@ -31,7 +31,8 @@ next_packet_for_stream(AVFormatContext * format_context, int stream_index, AVPac
     return ret;
 }
 
-static VALUE stream_codec(VALUE self)
+static VALUE 
+stream_codec(VALUE self)
 {
     AVStream * stream = get_stream(self);
     
@@ -43,7 +44,8 @@ static VALUE stream_codec(VALUE self)
     return rb_codec;
 }
 
-static VALUE stream_index(VALUE self)
+static VALUE 
+stream_index(VALUE self)
 {
     AVStream * stream = get_stream(self);
     return INT2FIX(stream->index);
@@ -57,6 +59,13 @@ stream_duration(VALUE self)
         return Qnil;
     }
     return(rb_float_new(stream->duration * av_q2d(stream->time_base)));
+}
+
+static VALUE
+stream_frame_count(VALUE self)
+{
+    AVStream * stream = get_stream(self);
+    return(rb_float_new(stream->nb_frames));
 }
 
 static VALUE
@@ -119,8 +128,8 @@ static int
 stream_resample(char *src_buf, char *dst_buf, int src_c, 
     int dst_c, int src_s, int dst_s, int src_size, int dst_size)
 {
-    printf("[chan : %d, rate : %d, init_size : %d, src_chan : %d, src_rate : %d, src_size : %d, src_buf : %d]\n",
-                dst_c, dst_s, dst_size, src_c, src_s, src_size, src_buf);
+    //printf("[chan : %d, rate : %d, init_size : %d, src_chan : %d, src_rate : %d, src_size : %d, src_buf : %d]\n",
+    //            dst_c, dst_s, dst_size, src_c, src_s, src_size, src_buf);
     ReSampleContext * re_codec_context = audio_resample_init(dst_c, src_c, dst_s, src_s);
     
     dst_buf = malloc(dst_size);
@@ -209,8 +218,12 @@ extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_cont
             if ((buf_size+out_size)>=buf_cap){
                 buf_cap *= 2;
                 char *tmp = malloc(buf_cap);
-                if (tmp <= 0)
+                if (tmp <= 0){
+                    //printf("malloc failure %d\n", tmp);
                     rb_raise(rb_eRuntimeError, "error allocate memory when extracting audio");
+                }
+
+                //printf("buf addr %d, %d, %d\n", tmp, raw_data, buf_cap);
                 memcpy(tmp, *raw_data, buf_size);
                 free(*raw_data);
                 *raw_data = tmp;
@@ -334,7 +347,10 @@ stream_decode_frame(VALUE self)
         av_free_packet(&decoding_packet);
         if (ret != 0)
             return Qnil;
-        return rb_frame;
+        // return rb_frame;
+        return rb_ary_new3(3, rb_frame, 
+                    rb_float_new(decoding_packet.pts * (double)av_q2d(stream->time_base)),
+                    rb_float_new(decoding_packet.dts * (double)av_q2d(stream->time_base)));
     }
     
     av_free_packet(&decoding_packet);
@@ -383,6 +399,7 @@ Init_FFMPEGStream()
     rb_define_method(rb_cFFMPEGStream, "index", stream_index, 0);
     rb_define_method(rb_cFFMPEGStream, "codec", stream_codec, 0);
     rb_define_method(rb_cFFMPEGStream, "duration", stream_duration, 0);
+    rb_define_method(rb_cFFMPEGStream, "frame_count", stream_frame_count, 0);
     rb_define_method(rb_cFFMPEGStream, "frame_rate", stream_frame_rate, 0);
     rb_define_method(rb_cFFMPEGStream, "position", stream_position, 0);
     rb_define_method(rb_cFFMPEGStream, "decode_frame", stream_decode_frame, 0);
