@@ -126,15 +126,12 @@ stream_position(VALUE self)
 // dst_size:resample audio data buffer size
 static int
 stream_resample(char *src_buf, char *dst_buf, int src_c, 
-    int dst_c, int src_s, int dst_s, int src_size, int dst_size)
+    int dst_c, int src_s, int dst_s, int src_size)
 {
     //printf("[chan : %d, rate : %d, init_size : %d, src_chan : %d, src_rate : %d, src_size : %d, src_buf : %d]\n",
     //            dst_c, dst_s, dst_size, src_c, src_s, src_size, src_buf);
     ReSampleContext * re_codec_context = audio_resample_init(dst_c, src_c, dst_s, src_s);
-    
-    dst_buf = malloc(dst_size);
-    if (dst_buf <= 0)
-        rb_raise(rb_eRuntimeError, "error allocate memory when resampling");
+
     int nb_samples = src_size/(src_c * 2);
     int resample_size = audio_resample(re_codec_context, (int16_t *)dst_buf, (int16_t *)src_buf, nb_samples);
     resample_size *= (dst_c * 2);
@@ -217,12 +214,7 @@ extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_cont
         
             if ((buf_size+out_size)>=buf_cap){
                 buf_cap *= 2;
-                char *tmp = malloc(buf_cap);
-                if (tmp <= 0){
-                    //printf("malloc failure %d\n", tmp);
-                    rb_raise(rb_eRuntimeError, "error allocate memory when extracting audio");
-                }
-
+                uint8_t *tmp = malloc(buf_cap);
                 //printf("buf addr %d, %d, %d\n", tmp, raw_data, buf_cap);
                 memcpy(tmp, *raw_data, buf_size);
                 free(*raw_data);
@@ -269,21 +261,22 @@ stream_decode_audio(VALUE self, VALUE rb_channel, VALUE rb_sample_rate)
         int channel = FIX2INT(rb_channel);
         int sample_rate = FIX2INT(rb_sample_rate);
         if (channel || sample_rate) {
-            char *resample_data;
             int src_chan = codec_context->channels;
             int src_rate = codec_context->sample_rate;
 
-            channel = (channel != 0 ? channel : src_chan);
-            sample_rate = (sample_rate != 0 ? sample_rate : src_rate);
+            channel = (channel ? channel : src_chan);
+            sample_rate = (sample_rate ? sample_rate : src_rate);
 
             int init_sample_size = channel * sample_rate * (1+(size / (src_chan * src_rate)));
-            int sample_size = stream_resample(raw_data, resample_data, src_chan, channel,
-                                src_rate, sample_rate, size, init_sample_size);
-            if (sample_size > 0) {
+            char *resample_data = malloc(init_sample_size);
+            int resample_size = stream_resample(raw_data, resample_data, src_chan, channel,
+                                src_rate, sample_rate, size);
+
+            if (resample_size > 0) {
                 free(raw_data);
                 raw_data = resample_data;
                 resample_data = NULL;
-                size = sample_size;
+                size = resample_size;
             }
         }
         audio_stream = rb_str_new(raw_data, size);
@@ -347,10 +340,7 @@ stream_decode_frame(VALUE self)
         av_free_packet(&decoding_packet);
         if (ret != 0)
             return Qnil;
-        // return rb_frame;
-        return rb_ary_new3(3, rb_frame, 
-                    rb_float_new(decoding_packet.pts * (double)av_q2d(stream->time_base)),
-                    rb_float_new(decoding_packet.dts * (double)av_q2d(stream->time_base)));
+        return rb_frame;
     }
     
     av_free_packet(&decoding_packet);
