@@ -62,6 +62,13 @@ stream_duration(VALUE self)
 }
 
 static VALUE
+stream_time_base(VALUE self)
+{
+    AVStream * stream = get_stream(self);
+    return(rb_float_new(av_q2d(stream->time_base)));
+}
+
+static VALUE
 stream_frame_count(VALUE self)
 {
     AVStream * stream = get_stream(self);
@@ -88,7 +95,35 @@ stream_seek(VALUE self, VALUE position)
         timestamp += format_context->start_time;
     
     //fprintf(stderr, "seeking to %d\n", NUM2INT(position));
-    ret = av_seek_frame(format_context, stream->index, timestamp, 0);
+    ret = av_seek_frame(format_context, stream->index, timestamp, 4);
+    printf("ret: %d, timestamp: %d\n", ret, timestamp);
+    if (ret < 0) {
+        rb_raise(rb_eRangeError, "could not seek %s to pos %f",
+            format_context->filename, timestamp * av_q2d(stream->time_base));
+    }
+    
+    //fprintf(stderr, "seeked.\n");
+    return self;
+}
+
+static VALUE
+stream_seek_by_frame(VALUE self, VALUE position)
+{
+    AVFormatContext * format_context = get_format_context(rb_iv_get(self, "@format"));
+    AVStream * stream = get_stream(self);
+    
+    int64_t timestamp = NUM2LONG(position);
+    
+    //printf("%d --seek\n", timestamp);
+
+    int ret;
+    if (format_context->start_time != AV_NOPTS_VALUE && format_context->start_time >= 0)
+        timestamp += format_context->start_time;
+    
+    //printf("%ld %ld--seek\n", timestamp, format_context->start_time);
+    
+    //fprintf(stderr, "seeking to %d\n", NUM2INT(position));
+    ret = av_seek_frame(format_context, stream->index, timestamp, 4);
     if (ret < 0) {
         rb_raise(rb_eRangeError, "could not seek %s to pos %f",
             format_context->filename, timestamp * av_q2d(stream->time_base));
@@ -340,7 +375,12 @@ stream_decode_frame(VALUE self)
         av_free_packet(&decoding_packet);
         if (ret != 0)
             return Qnil;
-        return rb_frame;
+        return  rb_ary_new3(
+                    3,
+                    rb_frame,
+                    rb_float_new(decoding_packet.pts * (double)av_q2d(stream->time_base)),
+                    rb_float_new(decoding_packet.dts * (double)av_q2d(stream->time_base))
+                );
     }
     
     av_free_packet(&decoding_packet);
@@ -389,10 +429,12 @@ Init_FFMPEGStream()
     rb_define_method(rb_cFFMPEGStream, "index", stream_index, 0);
     rb_define_method(rb_cFFMPEGStream, "codec", stream_codec, 0);
     rb_define_method(rb_cFFMPEGStream, "duration", stream_duration, 0);
+    rb_define_method(rb_cFFMPEGStream, "time_base", stream_time_base, 0);
     rb_define_method(rb_cFFMPEGStream, "frame_count", stream_frame_count, 0);
     rb_define_method(rb_cFFMPEGStream, "frame_rate", stream_frame_rate, 0);
     rb_define_method(rb_cFFMPEGStream, "position", stream_position, 0);
     rb_define_method(rb_cFFMPEGStream, "decode_frame", stream_decode_frame, 0);
     rb_define_method(rb_cFFMPEGStream, "decode_audio", stream_decode_audio, 2);
     rb_define_method(rb_cFFMPEGStream, "seek", stream_seek, 1);
+    rb_define_method(rb_cFFMPEGStream, "seek_by_frame", stream_seek_by_frame, 1);
 }

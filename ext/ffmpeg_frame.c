@@ -35,7 +35,7 @@ frame_to_rgb24(VALUE self)
     int height = NUM2INT(rb_iv_get(self, "@height"));
     int pixel_format = NUM2INT(rb_iv_get(self, "@pixel_format"));
 
-    printf("%d, %d, %d\n", width, height, pixel_format);
+    // printf("%d, %d, %d\n", width, height, pixel_format);
     
     struct SwsContext *img_convert_ctx = NULL;
     img_convert_ctx = sws_getContext(width, height, pixel_format,
@@ -48,7 +48,6 @@ frame_to_rgb24(VALUE self)
         0, height, to->data, to->linesize);
     
     av_free(img_convert_ctx);
-    
     return build_frame_object(to, width, height, 0, PIX_FMT_RGB24);
 }
 
@@ -69,7 +68,6 @@ frame_to_ppm(VALUE self)
     
     char header[255];
     sprintf(header, "P6\n%d %d\n255\n", width, height);
-    
     int size = strlen(header) + frame->linesize[0] * height;
     char * data_string = malloc(size);
     strcpy(data_string, header);
