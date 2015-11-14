@@ -62,6 +62,15 @@ stream_duration(VALUE self)
 }
 
 static VALUE
+stream_get_rotation(VALUE self)
+{
+    AVStream *stream = get_stream(self);
+    AVDictionaryEntry *rotate_tag = av_dict_get(stream->metadata, "rotate", NULL, 0);
+    if(rotate_tag)
+        return rb_str_new(rotate_tag->value, strlen(rotate_tag->value));
+    return Qnil;
+}
+static VALUE
 stream_time_base(VALUE self)
 {
     AVStream * stream = get_stream(self);
@@ -96,7 +105,7 @@ stream_seek(VALUE self, VALUE position)
     
     //fprintf(stderr, "seeking to %d\n", NUM2INT(position));
     ret = av_seek_frame(format_context, stream->index, timestamp, 4);
-    printf("ret: %d, timestamp: %d\n", ret, timestamp);
+    //printf("ret: %d, timestamp: %d\n", ret, timestamp);
     if (ret < 0) {
         rb_raise(rb_eRangeError, "could not seek %s to pos %f",
             format_context->filename, timestamp * av_q2d(stream->time_base));
@@ -117,7 +126,7 @@ stream_seek_by_frame(VALUE self, VALUE position)
     //printf("%d --seek\n", timestamp);
 
     int ret;
-    if (format_context->start_time != AV_NOPTS_VALUE && format_context->start_time >= 0)
+    if (format_context->start_time != AV_NOPTS_VALUE)
         timestamp += format_context->start_time;
     
     //printf("%ld %ld--seek\n", timestamp, format_context->start_time);
@@ -147,6 +156,9 @@ stream_position(VALUE self)
             rb_raise(rb_eRuntimeError, "error extracting packet");
         }
     } while(decoding_packet.stream_index != stream->index);
+
+    printf("%f %f c-pos:%f\n", decoding_packet.pts, (double)av_q2d(stream->time_base),
+        decoding_packet.pts * (double)av_q2d(stream->time_base));
 
     return rb_float_new(decoding_packet.pts * (double)av_q2d(stream->time_base));
 }
@@ -192,22 +204,24 @@ extract_next_frame(AVFormatContext * format_context, AVCodecContext * codec_cont
     int decoded;
     int frame_complete = 0;
     int next;
-    
+
     while(!frame_complete &&
             0 == (next = next_packet_for_stream(format_context, stream_index, decoding_packet))) {
         // setting parameters before processing decoding_packet data
         remaining = decoding_packet->size;
         databuffer = decoding_packet->data;
-        
         while(remaining > 0) {
-            decoded = avcodec_decode_video(codec_context, frame, &frame_complete,
-                databuffer, remaining);
+            // printf("%d, %d, %d\n", codec_context, frame, decoding_packet);
+            /*decoded = avcodec_decode_video(codec_context, frame, &frame_complete,
+                databuffer, remaining);*/
+            decoded = avcodec_decode_video2(codec_context, frame, 
+                &frame_complete, decoding_packet);
             remaining -= decoded;
             // pointer seek forward
             databuffer += decoded;
         }
     }
-    
+
     return next;
 }
 
@@ -227,7 +241,7 @@ extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_cont
     int frame_complete = 0;
     int next;
 
-    int buf_cap = AVCODEC_MAX_AUDIO_FRAME_SIZE;
+    int buf_cap = 192000;
     int buf_size = 0;
     *raw_data = malloc(buf_cap);
 
@@ -239,7 +253,7 @@ extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_cont
 
         while(remaining > 0) {
 
-            int out_size = AVCODEC_MAX_AUDIO_FRAME_SIZE;
+            int out_size = 192000;
             char *out_buffer = malloc(out_size);
             decoded = avcodec_decode_audio2(codec_context, (int16_t*)out_buffer, 
                 &out_size, databuffer, remaining);
@@ -282,7 +296,7 @@ stream_decode_audio(VALUE self, VALUE rb_channel, VALUE rb_sample_rate)
         AVCodec * codec = avcodec_find_decoder(codec_context->codec_id);
         if (!codec)
             rb_raise(rb_eRuntimeError, "error codec not found");
-        if (avcodec_open(codec_context, codec) < 0)
+        if (avcodec_open2(codec_context, codec, NULL) < 0)
             rb_raise(rb_eRuntimeError, "error while opening codec : %s", codec->name);
     }
 
@@ -337,7 +351,7 @@ stream_decode_frame(VALUE self)
         AVCodec * codec = avcodec_find_decoder(codec_context->codec_id);
         if (!codec)
             rb_raise(rb_eRuntimeError, "error codec not found");
-        if (avcodec_open(codec_context, codec) < 0)
+        if (avcodec_open2(codec_context, codec, NULL) < 0)
             rb_raise(rb_eRuntimeError, "error while opening codec : %s", codec->name);
     }
 
@@ -349,7 +363,11 @@ stream_decode_frame(VALUE self)
         INT2NUM(codec_context->pix_fmt));
     
     AVFrame * frame = get_frame(rb_frame);
-    avcodec_get_frame_defaults(frame);
+    //avcodec_get_frame_defaults(frame);
+    memset(frame, 0, sizeof(AVFrame));
+
+    frame->pts=AV_NOPTS_VALUE;
+    frame->key_frame = 1;
     
     AVPacket decoding_packet;
     av_init_packet(&decoding_packet);
@@ -376,7 +394,7 @@ stream_decode_frame(VALUE self)
         if (ret != 0)
             return Qnil;
         return  rb_ary_new3(
-                    3,
+                    4,
                     rb_frame,
                     rb_float_new(decoding_packet.pts * (double)av_q2d(stream->time_base)),
                     rb_float_new(decoding_packet.dts * (double)av_q2d(stream->time_base))
@@ -433,6 +451,7 @@ Init_FFMPEGStream()
     rb_define_method(rb_cFFMPEGStream, "frame_count", stream_frame_count, 0);
     rb_define_method(rb_cFFMPEGStream, "frame_rate", stream_frame_rate, 0);
     rb_define_method(rb_cFFMPEGStream, "position", stream_position, 0);
+    rb_define_method(rb_cFFMPEGStream, "get_rotation", stream_get_rotation, 0);
     rb_define_method(rb_cFFMPEGStream, "decode_frame", stream_decode_frame, 0);
     rb_define_method(rb_cFFMPEGStream, "decode_audio", stream_decode_audio, 2);
     rb_define_method(rb_cFFMPEGStream, "seek", stream_seek, 1);

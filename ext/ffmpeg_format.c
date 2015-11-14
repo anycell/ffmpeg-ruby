@@ -84,13 +84,13 @@ format_count_stream_with_codec_type(VALUE self, int codec_type)
 static VALUE
 format_video_stream_count(VALUE self)
 {
-    return format_count_stream_with_codec_type(self, CODEC_TYPE_VIDEO);
+    return format_count_stream_with_codec_type(self, AVMEDIA_TYPE_VIDEO);
 }
 
 static VALUE
 format_audio_stream_count(VALUE self)
 {
-    return format_count_stream_with_codec_type(self, CODEC_TYPE_AUDIO);
+    return format_count_stream_with_codec_type(self, AVMEDIA_TYPE_AUDIO);
 }
 
 static VALUE
@@ -109,13 +109,13 @@ format_has_stream_with_codec_type(VALUE self, int codec_type)
 static VALUE
 format_has_video(VALUE self)
 {
-    return format_has_stream_with_codec_type(self, CODEC_TYPE_VIDEO);
+    return format_has_stream_with_codec_type(self, AVMEDIA_TYPE_VIDEO);
 }
 
 static VALUE
 format_has_audio(VALUE self)
 {
-    return format_has_stream_with_codec_type(self, CODEC_TYPE_AUDIO);
+    return format_has_stream_with_codec_type(self, AVMEDIA_TYPE_AUDIO);
 }
 
 // copied from avformat util.c
@@ -165,7 +165,7 @@ free_format(AVFormatContext * format_context)
     }
     
     if (format_context->iformat) {
-        av_close_input_file(format_context);
+        avformat_close_input(&format_context);
     } else {
         av_free(format_context);
     }
@@ -175,7 +175,7 @@ static VALUE
 alloc_format(VALUE klass)
 {
     //fprintf(stderr, "allocating Format\n");
-    AVFormatContext * format_context = av_alloc_format_context();
+    AVFormatContext * format_context = avformat_alloc_context();
     VALUE obj;
     format_context->oformat = NULL;
     format_context->iformat = NULL;
@@ -198,7 +198,6 @@ Init_FFMPEGFormat() {
     rb_define_method(rb_cFFMPEGFormat, "bit_rate", format_bit_rate, 0);
     rb_define_method(rb_cFFMPEGFormat, "duration", format_duration, 0);
     rb_define_method(rb_cFFMPEGFormat, "human_duration", format_duration_human, 0);
-    
     rb_define_method(rb_cFFMPEGFormat, "streams", format_streams, 0);
     rb_define_method(rb_cFFMPEGFormat, "video_stream_count", format_video_stream_count, 0);
     rb_define_method(rb_cFFMPEGFormat, "audio_stream_count", format_audio_stream_count, 0);

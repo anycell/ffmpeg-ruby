@@ -15,22 +15,21 @@ input_format_initialize(VALUE self, VALUE filename)
     
     Data_Get_Struct(self, AVFormatContext, format_context);
     //fprintf(stderr, "init format %p\n", format_context);
-    AVFormatParameters fp, *ap = &fp;
-    
+    /*AVFormatParameters fp, *ap = &fp;
     memset(ap, 0, sizeof(fp));
     
     ap->prealloced_context = 1;
     ap->width = 0;
     ap->height = 0;
-    ap->pix_fmt = PIX_FMT_YUV420P;
-    
+    ap->pix_fmt = 0;
+    */
     if (Qfalse == rb_funcall(rb_cFile, rb_intern("file?"), 1, filename))
         rb_raise(rb_eArgError,
             "ffmpeg failed to open input file %s",
             StringValuePtr(filename));
     
-    int error = av_open_input_file(&format_context, StringValuePtr(filename),
-        NULL, FFM_PACKET_SIZE, ap);
+    int error = avformat_open_input(&format_context, StringValuePtr(filename),
+        NULL, NULL);
     
     if (error < 0) {
         DATA_PTR(self) = format_context;
@@ -39,7 +38,7 @@ input_format_initialize(VALUE self, VALUE filename)
             StringValuePtr(filename));
     }
     
-    error = av_find_stream_info(format_context);
+    error = avformat_find_stream_info(format_context, NULL);
 
     if (error < 0) {
         DATA_PTR(self) = format_context;

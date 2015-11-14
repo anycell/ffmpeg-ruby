@@ -5,10 +5,13 @@
 #ifndef RUBY_FFMPEG_H__
 #define RUBY_FFMPEG_H__
 
+#ifndef FFMPEG_LIB
+#define FFMPEG_LIB
 #include <libavformat/avformat.h>
 #include <libavutil/avutil.h>
 #include <libavcodec/avcodec.h>
 #include <libswscale/swscale.h>
+#endif
 
 #ifdef RSHIFT
  #undef RSHIFT

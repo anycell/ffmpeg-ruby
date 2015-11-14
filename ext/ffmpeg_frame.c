@@ -14,13 +14,13 @@ alloc_picture(int pix_fmt, int width, int height)
     uint8_t *picture_buf;
     int size;
     
-    picture = avcodec_alloc_frame();
+    picture = av_frame_alloc();
     if (!picture)
         return NULL;
     size = avpicture_get_size(pix_fmt, width, height);
     picture_buf = av_malloc(size);
     if (!picture_buf) {
-        av_free(picture);
+        av_frame_free(picture);
         return NULL;
     }
     avpicture_fill((AVPicture *)picture, picture_buf,
@@ -34,21 +34,19 @@ frame_to_rgb24(VALUE self)
     int width = NUM2INT(rb_iv_get(self, "@width"));
     int height = NUM2INT(rb_iv_get(self, "@height"));
     int pixel_format = NUM2INT(rb_iv_get(self, "@pixel_format"));
-
-    // printf("%d, %d, %d\n", width, height, pixel_format);
     
     struct SwsContext *img_convert_ctx = NULL;
     img_convert_ctx = sws_getContext(width, height, pixel_format,
-        width, height, PIX_FMT_RGB24, SWS_BICUBIC, NULL, NULL, NULL);
+        width, height, AV_PIX_FMT_RGB24, SWS_BICUBIC, NULL, NULL, NULL);
     
     AVFrame * from = get_frame(self);
-    AVFrame * to = alloc_picture(PIX_FMT_RGB24, width, height);
+    AVFrame * to = alloc_picture(AV_PIX_FMT_RGB24, width, height);
     
     sws_scale(img_convert_ctx, from->data, from->linesize,
         0, height, to->data, to->linesize);
     
     av_free(img_convert_ctx);
-    return build_frame_object(to, width, height, 0, PIX_FMT_RGB24);
+    return build_frame_object(to, width, height, 0, AV_PIX_FMT_RGB24);
 }
 
 static VALUE
@@ -102,14 +100,15 @@ frame_to_rawdata(VALUE self)
 static void
 free_frame(AVFrame * frame)
 {
-    //fprintf(stderr, "will free frame\n");
-    av_free(frame);
+    //fprintf(stderr,"[START] Frame addr: %d\n", frame);
+    av_frame_free(&frame);
+    //fprintf(stderr,"[START] Frame addr: %d\n", frame);
 }
 
 static VALUE
 alloc_frame(VALUE klass)
 {
-    AVFrame * frame = avcodec_alloc_frame();
+    AVFrame * frame = av_frame_alloc();
     VALUE obj;
     obj = Data_Wrap_Struct(klass, 0, free_frame, frame);
     return obj;

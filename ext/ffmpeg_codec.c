@@ -23,7 +23,7 @@ codec_open_decoder(VALUE self)
         rb_raise(rb_eRuntimeError, "not enough memory to open codec");
     
     //fprintf(stderr, "opening codec\n");
-    err = avcodec_open(codec_context, codec);
+    err = avcodec_open2(codec_context, codec, NULL);
     
     if (err < 0)
         rb_raise(rb_eRuntimeError, "unable to open codec");
@@ -42,7 +42,7 @@ codec_open_encoder(VALUE self)
         rb_raise(rb_eRuntimeError, "not enough memory to open codec");
     
     //fprintf(stderr, "opening codec\n");
-    err = avcodec_open(codec_context, codec);
+    err = avcodec_open2(codec_context, codec, NULL);
     
     if (err < 0)
         rb_raise(rb_eRuntimeError, "unable to open codec");

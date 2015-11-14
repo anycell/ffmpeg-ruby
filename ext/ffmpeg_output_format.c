@@ -122,7 +122,7 @@ static VALUE output_format_add_video_stream(VALUE self, VALUE codec_id_or_sym)
     fprintf(stderr, "\ncodec name : %s, codec id : %d\n", codec->name, codec->id);
     fprintf(stderr, "codec time base : %d/%d\n", (int)codec_context->time_base.num, (int)codec_context->time_base.den);
     // open the codec
-    if (avcodec_open(codec_context, codec) < 0) {
+    if (avcodec_open2(codec_context, codec, NULL); < 0) {
         rb_raise(rb_eRuntimeError, "error while opening codec for encoding (%d)",
             codec_context->codec_id);
     }
@@ -166,7 +166,7 @@ static VALUE
 alloc_format(VALUE klass)
 {
     //fprintf(stderr, "allocating Format\n");
-    AVFormatContext * format_context = av_alloc_format_context();
+    AVFormatContext * format_context = avformat_alloc_context();
     VALUE obj;
     format_context->oformat = NULL;
     format_context->iformat = NULL;
