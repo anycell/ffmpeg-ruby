@@ -177,7 +177,8 @@ stream_resample(char *src_buf, char *dst_buf, int src_c,
 {
     //printf("[chan : %d, rate : %d, init_size : %d, src_chan : %d, src_rate : %d, src_size : %d, src_buf : %d]\n",
     //            dst_c, dst_s, dst_size, src_c, src_s, src_size, src_buf);
-    ReSampleContext * re_codec_context = audio_resample_init(dst_c, src_c, dst_s, src_s);
+    ReSampleContext * re_codec_context = av_audio_resample_init(dst_c, src_c, dst_s, src_s, 
+                                            AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_S16, 16, 10, 0, 1.0);
 
     int nb_samples = src_size/(src_c * 2);
     int resample_size = audio_resample(re_codec_context, (int16_t *)dst_buf, (int16_t *)src_buf, nb_samples);
@@ -193,7 +194,6 @@ static int
 extract_next_frame(AVFormatContext * format_context, AVCodecContext * codec_context,
     int stream_index, AVFrame * frame, AVPacket * decoding_packet)
 {
-    // open codec to decode the video if needed
     if (NULL == codec_context->codec) {
             rb_fatal("codec should have already been opened");
     }
@@ -207,7 +207,6 @@ extract_next_frame(AVFormatContext * format_context, AVCodecContext * codec_cont
 
     while(!frame_complete &&
             0 == (next = next_packet_for_stream(format_context, stream_index, decoding_packet))) {
-        // setting parameters before processing decoding_packet data
         remaining = decoding_packet->size;
         databuffer = decoding_packet->data;
         while(remaining > 0) {
@@ -217,7 +216,6 @@ extract_next_frame(AVFormatContext * format_context, AVCodecContext * codec_cont
             decoded = avcodec_decode_video2(codec_context, frame, 
                 &frame_complete, decoding_packet);
             remaining -= decoded;
-            // pointer seek forward
             databuffer += decoded;
         }
     }
@@ -245,41 +243,84 @@ extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_cont
     int buf_size = 0;
     *raw_data = malloc(buf_cap);
 
-    while(!frame_complete &&
-            0 == (next = next_packet_for_stream(format_context, stream_index, decoding_packet))) {
-        
-        remaining = decoding_packet->size;
-        databuffer = decoding_packet->data;
+    AVFrame *decoding_frame = NULL;
+    SwrContext *swr = swr_alloc();
+    av_opt_set_int(swr, "in_channel_layout",  codec_context->channel_layout, 0);
+    av_opt_set_int(swr, "out_channel_layout", codec_context->channel_layout,  0);
+    av_opt_set_int(swr, "in_sample_rate",     codec_context->sample_rate, 0);
+    av_opt_set_int(swr, "out_sample_rate",    16000, 0);
+    av_opt_set_sample_fmt(swr, "in_sample_fmt",  codec_context->sample_fmt, 0);
+    av_opt_set_sample_fmt(swr, "out_sample_fmt", AV_SAMPLE_FMT_S16,  0);
+    swr_init(swr);
 
-        while(remaining > 0) {
+    while(1) {
+        int flag = 0;
+        frame_complete = 0;
+        while(!frame_complete &&
+                0 == (next = next_packet_for_stream(format_context, stream_index, decoding_packet))) {
 
-            int out_size = 192000;
-            char *out_buffer = malloc(out_size);
-            decoded = avcodec_decode_audio2(codec_context, (int16_t*)out_buffer, 
-                &out_size, databuffer, remaining);
+            remaining = decoding_packet->size;
+            databuffer = decoding_packet->data;
+            fprintf(stderr, "remaining: %d\n", remaining);
 
-            remaining -= decoded;
-            databuffer += decoded;
-        
-            if ((buf_size+out_size)>=buf_cap){
-                buf_cap *= 2;
-                uint8_t *tmp = malloc(buf_cap);
-                //printf("buf addr %d, %d, %d\n", tmp, raw_data, buf_cap);
-                memcpy(tmp, *raw_data, buf_size);
-                free(*raw_data);
-                *raw_data = tmp;
-                tmp = NULL;
+            while(remaining > 0) {
+
+                /*int out_size = 192000;
+                char *out_buffer = malloc(out_size);
+                decoded = avcodec_decode_audio2(codec_context, (int16_t*)out_buffer, 
+                    &out_size, databuffer, remaining);*/
+
+                if (!decoding_frame)
+                    if (!(decoding_frame=av_frame_alloc()))
+                        rb_raise(rb_eRuntimeError, "error allocate memory for decode audio.");
+                decoded = avcodec_decode_audio4(codec_context, decoding_frame, 
+                            &frame_complete, decoding_packet);
+                if (frame_complete) {
+                    int out_linesize;
+                    int out_size = av_samples_get_buffer_size(&out_linesize, codec_context->channels, 
+                                    decoding_frame->nb_samples, codec_context->sample_fmt, 1);
+                    fprintf(stderr, "decoded: %d, out_linesize: %d, out_size: %d\n", decoded, out_linesize, out_size);
+
+                    uint16_t* output_buffer = malloc(1024*10);
+                    int dst_nb_samples = av_rescale_rnd(decoding_frame->nb_samples, 16000, 44100, AV_ROUND_UP);
+                    int sample_size = swr_convert(swr, &output_buffer, dst_nb_samples,
+                                    decoding_frame->data, decoding_frame->nb_samples);
+                    sample_size *= 2;
+                    fprintf(stderr, "dst_nb_samples: %d, sample_size: %d, frame_complete: %d\n", 
+                        dst_nb_samples, sample_size, frame_complete);
+
+
+                    if ((buf_size+sample_size)>=buf_cap){
+                        buf_cap *= 2;
+                        uint8_t *tmp = malloc(buf_cap);
+                        memcpy(tmp, *raw_data, buf_size);
+                        free(*raw_data);
+                        *raw_data = tmp;
+                        tmp = NULL;
+                    }
+
+                    memcpy(*raw_data+buf_size, output_buffer, sample_size);
+                    buf_size += sample_size;
+                        free(output_buffer);
+
+                    flag += sample_size;
+                    fprintf(stderr, "flag-1: %d\n", flag);
+                }
+
+                remaining -= decoded;
+                databuffer += decoded;
             }
-            memcpy(*raw_data+buf_size, out_buffer, out_size);
-            buf_size += out_size;
-
-            if (out_buffer) {
-                free(out_buffer);
-                out_buffer = NULL;
-            }
+            fprintf(stderr, "flag-2: %d\n", flag);
         }
+
+        fprintf(stderr, "flag: %d\n", flag);
+        if(flag <= 0)
+            break;
     }
 
+    av_frame_free(&decoding_frame);
+    swr_free(&swr);
+    // fprintf(stderr, "buf_size: %d\n", buf_size);
     return buf_size;
 }
 
@@ -306,6 +347,7 @@ stream_decode_audio(VALUE self, VALUE rb_channel, VALUE rb_sample_rate)
     char *raw_data;
     VALUE audio_stream = Qnil;
     int size = extract_next_audio(format_context, codec_context, stream->index, &raw_data, &decoding_packet);
+    // fprintf(stderr, "wrapper size: %d\n", size);
     if (size > 0) {
         int channel = FIX2INT(rb_channel);
         int sample_rate = FIX2INT(rb_sample_rate);
@@ -320,7 +362,7 @@ stream_decode_audio(VALUE self, VALUE rb_channel, VALUE rb_sample_rate)
             char *resample_data = malloc(init_sample_size);
             int resample_size = stream_resample(raw_data, resample_data, src_chan, channel,
                                 src_rate, sample_rate, size);
-
+            resample_size = -1;
             if (resample_size > 0) {
                 free(raw_data);
                 raw_data = resample_data;
