@@ -13,11 +13,9 @@ So, it doesn't support encoding (at least for now).
 
 ## Installation
 
-Download latest sources of ffmpeg :
+Download latest sources of ffmpeg from git:
   
-    wget http://ffmpeg.mplayerhq.hu/ffmpeg-export-snapshot.tar.bz2
-    tar xjvf ffmpeg-export-snapshot.tar.bz2
-    cd ffmpeg-export-20*
+    git clone git://source.ffmpeg.org/ffmpeg.git ffmpeg
 
 Configure, optionally with some prefix :
 
@@ -27,7 +25,7 @@ Configure, optionally with some prefix :
 
 You can now continue with ffmpeg-ruby.
 
-    git clone git://github.com/gwik/ffmpeg-ruby.git
+    git clone git://github.com/kikokikoTHU/ffmpeg-ruby.git
     
     cd ffmpeg-ruby
     gem build ./ffmpeg-ruby.gemspec
