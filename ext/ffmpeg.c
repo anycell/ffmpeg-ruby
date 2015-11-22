@@ -11,14 +11,14 @@ Init_FFMPEG_core()
 {
     //fprintf(stderr, "----------------- init FFMPEG ------------------\n");
     // initialize ffmpeg
-    
+
     av_register_all();
     avcodec_register_all();
 
     // initialize Module and Class
     rb_mFFMPEG = rb_define_module("FFMPEG");
     rb_define_const(rb_mFFMPEG, "LIBAVCODEC_VERSION", LONG2NUM((long)avcodec_version()));
-    
+
     Init_FFMPEGFormat();
     Init_FFMPEGInputFormat();
     //Init_FFMPEGOutputFormat();

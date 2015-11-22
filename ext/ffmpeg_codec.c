@@ -18,16 +18,16 @@ codec_open_decoder(VALUE self)
     int err = 0;
     AVCodecContext * codec_context = get_codec_context(self);
     AVCodec * codec = avcodec_find_decoder(codec_context->codec_id);
-    
+
     if (NULL == codec)
         rb_raise(rb_eRuntimeError, "not enough memory to open codec");
-    
+
     //fprintf(stderr, "opening codec\n");
     err = avcodec_open2(codec_context, codec, NULL);
-    
+
     if (err < 0)
         rb_raise(rb_eRuntimeError, "unable to open codec");
-    
+
     return self;
 }
 
@@ -37,16 +37,16 @@ codec_open_encoder(VALUE self)
     int err = 0;
     AVCodecContext * codec_context = get_codec_context(self);
     AVCodec * codec = avcodec_find_encoder(codec_context->codec_id);
-    
+
     if (NULL == codec)
         rb_raise(rb_eRuntimeError, "not enough memory to open codec");
-    
+
     //fprintf(stderr, "opening codec\n");
     err = avcodec_open2(codec_context, codec, NULL);
-    
+
     if (err < 0)
         rb_raise(rb_eRuntimeError, "unable to open codec");
-    
+
     return self;
 }
 
@@ -54,11 +54,11 @@ static VALUE
 codec_name(VALUE self)
 {
     AVCodecContext * codec_context = get_codec_context(self);
-    
+
     // open codec if needed
     if (NULL == codec_context->codec)
         codec_open_decoder(self);
-    
+
     return rb_str_new2(codec_context->codec_name);
 }
 
@@ -80,7 +80,7 @@ VALUE build_codec_object(AVCodecContext * codec)
 
 void
 Init_FFMPEGCodec()
-{   
+{
     rb_cFFMPEGCodec = rb_define_class_under(rb_mFFMPEG, "Codec", rb_cObject);
     //rb_define_alloc_func(rb_cFFMPEGCodec, alloc_codec);
     rb_define_method(rb_cFFMPEGCodec, "name", codec_name, 0);

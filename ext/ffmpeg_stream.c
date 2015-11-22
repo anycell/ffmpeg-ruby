@@ -4,23 +4,28 @@
  */
 #include "ffmpeg.h"
 #include "ffmpeg_utils.h"
+#include <unistd.h>
 
 VALUE rb_cFFMPEGStream;
+int audio_count = 0;
+int video_count = 0;
 
 static int
 next_packet(AVFormatContext * format_context, AVPacket * packet)
 {
     if(packet->data != NULL)
+    {
         av_free_packet(packet);
+    }
 
     int ret = av_read_frame(format_context, packet);
     if(ret < 0)
         return -1;
-    
+
     return 0;
 }
 
-static int 
+static int
 next_packet_for_stream(AVFormatContext * format_context, int stream_index, AVPacket * packet)
 {
     int ret = 0;
@@ -31,20 +36,20 @@ next_packet_for_stream(AVFormatContext * format_context, int stream_index, AVPac
     return ret;
 }
 
-static VALUE 
+static VALUE
 stream_codec(VALUE self)
 {
     AVStream * stream = get_stream(self);
-    
+
     VALUE rb_codec = rb_iv_get(self, "@codec");
-    
+
     if (rb_codec == Qnil && NULL != stream->codec)
         rb_codec = rb_iv_set(self, "@codec", build_codec_object(stream->codec));
-    
+
     return rb_codec;
 }
 
-static VALUE 
+static VALUE
 stream_index(VALUE self)
 {
     AVStream * stream = get_stream(self);
@@ -74,7 +79,6 @@ static VALUE
 stream_time_base(VALUE self)
 {
     AVStream * stream = get_stream(self);
-    fprintf(stderr, "time_base: %f\n", stream->time_base);
     return(rb_float_new(av_q2d(stream->time_base)));
 }
 
@@ -97,22 +101,19 @@ stream_seek(VALUE self, VALUE position)
 {
     AVFormatContext * format_context = get_format_context(rb_iv_get(self, "@format"));
     AVStream * stream = get_stream(self);
-    
+
     int64_t timestamp = NUM2LONG(position) / av_q2d(stream->time_base);
-    
+
     int ret;
     if (format_context->start_time != AV_NOPTS_VALUE)
         timestamp += format_context->start_time;
-    
-    //fprintf(stderr, "seeking to %d\n", NUM2INT(position));
+
     ret = av_seek_frame(format_context, stream->index, timestamp, 4);
-    //printf("ret: %d, timestamp: %d\n", ret, timestamp);
     if (ret < 0) {
         rb_raise(rb_eRangeError, "could not seek %s to pos %f",
             format_context->filename, timestamp * av_q2d(stream->time_base));
     }
-    
-    //fprintf(stderr, "seeked.\n");
+
     return self;
 }
 
@@ -121,25 +122,20 @@ stream_seek_by_frame(VALUE self, VALUE position)
 {
     AVFormatContext * format_context = get_format_context(rb_iv_get(self, "@format"));
     AVStream * stream = get_stream(self);
-    
-    int64_t timestamp = NUM2LONG(position);
-    
-    //printf("%d --seek\n", timestamp);
+    //AVCodecContext *codec = stream->codec;
+    //int64_t time_base = (int64_t(pCodecCtx->time_base.num) * AV_TIME_BASE) / int64_t(pCodecCtx->time_base.den);
+    //int64_t timestamp = NUM2LONG  (position) * time_base;
 
-    int ret;
-    if (format_context->start_time != AV_NOPTS_VALUE)
-        timestamp += format_context->start_time;
-    
-    //printf("%ld %ld--seek\n", timestamp, format_context->start_time);
-    
-    //fprintf(stderr, "seeking to %d\n", NUM2INT(position));
-    ret = av_seek_frame(format_context, stream->index, timestamp, 4);
-    if (ret < 0) {
-        rb_raise(rb_eRangeError, "could not seek %s to pos %f",
-            format_context->filename, timestamp * av_q2d(stream->time_base));
-    }
-    
-    //fprintf(stderr, "seeked.\n");
+    //int ret;
+    //if (format_context->start_time != AV_NOPTS_VALUE)
+      //  timestamp += format_context->start_time;
+
+    //ret = av_seek_frame(format_context, stream->index, timestamp, AVSEEK_FLAG_ANY);
+    //if (ret < 0) {
+      //  rb_raise(rb_eRangeError, "could not seek %s to pos %f",
+        //    format_context->filename, timestamp * av_q2d(stream->time_base));
+    //}
+
     return self;
 }
 
@@ -149,9 +145,9 @@ stream_position(VALUE self)
     AVFormatContext * format_context = get_format_context(rb_iv_get(self, "@format"));
     AVStream * stream = get_stream(self);
     AVPacket decoding_packet;
-    
+
     av_init_packet(&decoding_packet);
-        
+
     do {
         if(av_read_frame(format_context, &decoding_packet) < 0) {
             rb_raise(rb_eRuntimeError, "error extracting packet");
@@ -173,11 +169,9 @@ stream_position(VALUE self)
 // src_size:origin audio data buffer size
 // dst_size:resample audio data buffer size
 static int
-stream_resample(char *src_buf, char *dst_buf, int src_c, 
+stream_resample(char *src_buf, char *dst_buf, int src_c,
     int dst_c, int src_s, int dst_s, int src_size)
 {
-    // fprintf(stderr, "[chan : %d, rate : %d, src_chan : %d, src_rate : %d, src_size : %d, src_buf : %d]\n",
-    //            dst_c, dst_s, src_c, src_s, src_size, src_buf);
     SwrContext *swr = swr_alloc();
     av_opt_set_int(swr, "in_channel_layout",  src_c, 0);
     av_opt_set_int(swr, "out_channel_layout", dst_c,  0);
@@ -190,7 +184,6 @@ stream_resample(char *src_buf, char *dst_buf, int src_c,
     int src_nb_samples = src_size/4;
     int dst_nb_samples = av_rescale_rnd(src_nb_samples, dst_s, src_s, AV_ROUND_UP);
     int sample_size = swr_convert(swr, &dst_buf, dst_nb_samples, &src_buf, src_nb_samples);
-    // fprintf(stderr, "%d, %d, %d\n", dst_nb_samples, src_size, sample_size);
     sample_size *= 2;
 
     if (swr)
@@ -205,9 +198,9 @@ extract_next_frame(AVFormatContext * format_context, AVCodecContext * codec_cont
     if (NULL == codec_context->codec) {
             rb_fatal("codec should have already been opened");
     }
-    
+
     uint8_t * databuffer;
-    
+
     int remaining = 0;
     int decoded;
     int frame_complete = 0;
@@ -218,28 +211,26 @@ extract_next_frame(AVFormatContext * format_context, AVCodecContext * codec_cont
         remaining = decoding_packet->size;
         databuffer = decoding_packet->data;
         while(remaining > 0) {
-            // printf("%d, %d, %d\n", codec_context, frame, decoding_packet);
-            /*decoded = avcodec_decode_video(codec_context, frame, &frame_complete,
-                databuffer, remaining);*/
-            decoded = avcodec_decode_video2(codec_context, frame, 
+            decoded = avcodec_decode_video2(codec_context, frame,
                 &frame_complete, decoding_packet);
             remaining -= decoded;
             databuffer += decoded;
         }
+
     }
 
     return next;
 }
 
 // return audio buffer size
-static int 
-extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_context, 
+static int
+extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_context,
     int stream_index, uint8_t **raw_data, AVPacket * decoding_packet)
 {
     if (NULL == codec_context->codec) {
             rb_fatal("codec should have already been opened");
     }
-    
+
     uint8_t * databuffer;
 
     int remaining = 0;
@@ -251,15 +242,6 @@ extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_cont
     int buf_size = 0;
     *raw_data = malloc(buf_cap);
 
-    /*SwrContext *swr = swr_alloc();
-    av_opt_set_int(swr, "in_channel_layout",  codec_context->channel_layout, 0);
-    av_opt_set_int(swr, "out_channel_layout", codec_context->channel_layout,  0);
-    av_opt_set_int(swr, "in_sample_rate",     codec_context->sample_rate, 0);
-    av_opt_set_int(swr, "out_sample_rate",    16000, 0);
-    av_opt_set_sample_fmt(swr, "in_sample_fmt",  codec_context->sample_fmt, 0);
-    av_opt_set_sample_fmt(swr, "out_sample_fmt", AV_SAMPLE_FMT_S16,  0);
-    swr_init(swr);*/
-
     while(1) {
         int flag = 0;
         frame_complete = 0;
@@ -268,34 +250,18 @@ extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_cont
 
             remaining = decoding_packet->size;
             databuffer = decoding_packet->data;
-            // fprintf(stderr, "remaining: %d\n", remaining);
 
             while(remaining > 0) {
-
-                /*int out_size = 192000;
-                char *out_buffer = malloc(out_size);
-                decoded = avcodec_decode_audio2(codec_context, (int16_t*)out_buffer, 
-                    &out_size, databuffer, remaining);*/
                 AVFrame *decoding_frame = NULL;
                 if (!decoding_frame)
                     if (!(decoding_frame=av_frame_alloc()))
                         rb_raise(rb_eRuntimeError, "error allocate memory for decode audio.");
-                decoded = avcodec_decode_audio4(codec_context, decoding_frame, 
+                decoded = avcodec_decode_audio4(codec_context, decoding_frame,
                             &frame_complete, decoding_packet);
                 if (frame_complete) {
                     int out_linesize;
-                    int out_size = av_samples_get_buffer_size(&out_linesize, codec_context->channels, 
+                    int out_size = av_samples_get_buffer_size(&out_linesize, codec_context->channels,
                                     decoding_frame->nb_samples, codec_context->sample_fmt, 1);
-                    // fprintf(stderr, "decoded: %d, out_linesize: %d, out_size: %d\n", decoded, out_linesize, out_size);
-
-                    /*uint16_t* output_buffer = malloc(1024*10);
-                    int dst_nb_samples = av_rescale_rnd(decoding_frame->nb_samples, 16000, 44100, AV_ROUND_UP);
-                    int sample_size = swr_convert(swr, &output_buffer, dst_nb_samples,
-                                    decoding_frame->data, decoding_frame->nb_samples);
-                    sample_size *= 2;
-                    fprintf(stderr, "dst_nb_samples: %d, sample_size: %d, frame_complete: %d, src_nb_samples: %d\n", 
-                        dst_nb_samples, sample_size, frame_complete, decoding_frame->nb_samples);*/
-
 
                     if ((buf_size+out_size)>=buf_cap){
                         buf_cap *= 2;
@@ -308,7 +274,6 @@ extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_cont
 
                     memcpy(*raw_data+buf_size, decoding_frame->data[0], out_size);
                     buf_size += out_size;
-
                     flag += out_size;
                 }
                 remaining -= decoded;
@@ -319,8 +284,6 @@ extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_cont
         if(flag <= 0)
             break;
     }
-
-    // swr_free(&swr);
     return buf_size;
 }
 
@@ -383,9 +346,9 @@ stream_decode_frame(VALUE self)
 {
     AVFormatContext * format_context = get_format_context(rb_iv_get(self, "@format"));
     AVStream * stream = get_stream(self);
-    
+
     AVCodecContext * codec_context = stream->codec;
-    
+
     // open codec to decode the video if needed
     if (!codec_context->codec) {
         AVCodec * codec = avcodec_find_decoder(codec_context->codec_id);
@@ -401,17 +364,12 @@ stream_decode_frame(VALUE self)
         INT2NUM(codec_context->height),
         INT2NUM(0),
         INT2NUM(codec_context->pix_fmt));
-    
-    AVFrame * frame = get_frame(rb_frame);
-    //avcodec_get_frame_defaults(frame);
-    memset(frame, 0, sizeof(AVFrame));
 
-    frame->pts=AV_NOPTS_VALUE;
-    frame->key_frame = 1;
-    
+    AVFrame * frame = get_frame(rb_frame);
+
     AVPacket decoding_packet;
     av_init_packet(&decoding_packet);
-    
+
     if (rb_block_given_p()) {
         int ret;
         do {
@@ -440,7 +398,7 @@ stream_decode_frame(VALUE self)
                     rb_float_new(decoding_packet.dts * (double)av_q2d(stream->time_base))
                 );
     }
-    
+
     av_free_packet(&decoding_packet);
     return self;
 }
@@ -454,13 +412,13 @@ mark_stream(AVStream * stream)
 
 void
 free_stream(AVStream * stream)
-{}
+{
+}
 
 static VALUE
 alloc_stream(VALUE klass)
 {
     AVStream * stream = av_new_stream(NULL, 0);
-    printf("AVStream addr %d\n", stream);
     return Data_Wrap_Struct(rb_cFFMPEGStream, 0, 0, stream);
 }
 
@@ -483,7 +441,7 @@ Init_FFMPEGStream()
     rb_cFFMPEGStream = rb_define_class_under(rb_mFFMPEG, "Stream", rb_cObject);
     rb_define_alloc_func(rb_cFFMPEGStream, alloc_stream);
     rb_define_method(rb_cFFMPEGStream, "initialize", stream_initialize, 0);
-    
+
     rb_define_method(rb_cFFMPEGStream, "index", stream_index, 0);
     rb_define_method(rb_cFFMPEGStream, "codec", stream_codec, 0);
     rb_define_method(rb_cFFMPEGStream, "duration", stream_duration, 0);
