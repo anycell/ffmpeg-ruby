@@ -108,7 +108,7 @@ stream_seek(VALUE self, VALUE position)
     if (format_context->start_time != AV_NOPTS_VALUE)
         timestamp += format_context->start_time;
 
-    ret = av_seek_frame(format_context, stream->index, timestamp, 4);
+    ret = av_seek_frame(format_context, stream->index, timestamp, AVSEEK_FLAG_ANY);
     if (ret < 0) {
         rb_raise(rb_eRangeError, "could not seek %s to pos %f",
             format_context->filename, timestamp * av_q2d(stream->time_base));
@@ -122,19 +122,18 @@ stream_seek_by_frame(VALUE self, VALUE position)
 {
     AVFormatContext * format_context = get_format_context(rb_iv_get(self, "@format"));
     AVStream * stream = get_stream(self);
-    //AVCodecContext *codec = stream->codec;
-    //int64_t time_base = (int64_t(pCodecCtx->time_base.num) * AV_TIME_BASE) / int64_t(pCodecCtx->time_base.den);
-    //int64_t timestamp = NUM2LONG  (position) * time_base;
 
-    //int ret;
-    //if (format_context->start_time != AV_NOPTS_VALUE)
-      //  timestamp += format_context->start_time;
+    int64_t timestamp = NUM2LONG(position) * AV_TIME_BASE;
 
-    //ret = av_seek_frame(format_context, stream->index, timestamp, AVSEEK_FLAG_ANY);
-    //if (ret < 0) {
-      //  rb_raise(rb_eRangeError, "could not seek %s to pos %f",
-        //    format_context->filename, timestamp * av_q2d(stream->time_base));
-    //}
+    int ret;
+    if (format_context->start_time != AV_NOPTS_VALUE)
+       timestamp += format_context->start_time;
+
+    ret = av_seek_frame(format_context, stream->index, timestamp, AVSEEK_FLAG_ANY);
+    if (ret < 0) {
+       rb_raise(rb_eRangeError, "could not seek %s to pos %f",
+           format_context->filename, timestamp * av_q2d(stream->time_base));
+    }
 
     return self;
 }
@@ -208,6 +207,7 @@ extract_next_frame(AVFormatContext * format_context, AVCodecContext * codec_cont
 
     while(!frame_complete &&
             0 == (next = next_packet_for_stream(format_context, stream_index, decoding_packet))) {
+        //fprintf(stdout, "frame complete?: %d\n", frame_complete);
         remaining = decoding_packet->size;
         databuffer = decoding_packet->data;
         while(remaining > 0) {

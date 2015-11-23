@@ -14,15 +14,6 @@ input_format_initialize(VALUE self, VALUE filename)
     AVFormatContext * format_context = NULL;
 
     Data_Get_Struct(self, AVFormatContext, format_context);
-    //fprintf(stderr, "init format %p\n", format_context);
-    /*AVFormatParameters fp, *ap = &fp;
-    memset(ap, 0, sizeof(fp));
-
-    ap->prealloced_context = 1;
-    ap->width = 0;
-    ap->height = 0;
-    ap->pix_fmt = 0;
-    */
     if (Qfalse == rb_funcall(rb_cFile, rb_intern("file?"), 1, filename))
         rb_raise(rb_eArgError,
             "ffmpeg failed to open input file %s",
@@ -47,7 +38,6 @@ input_format_initialize(VALUE self, VALUE filename)
             StringValuePtr(filename));
     }
 
-    //fprintf(stderr, "InputFormat end initialize\n");
     return self;
 }
 

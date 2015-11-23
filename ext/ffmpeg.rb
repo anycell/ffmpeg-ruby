@@ -19,6 +19,9 @@ module FFMPEG
       streams.find { |st| st.type == :audio }
     end
 
+    def destroy!
+      super
+    end
   end
 
   class Stream

@@ -55,7 +55,7 @@ frame_to_rawdata_rgb24(VALUE self)
   strcpy(data_string, header);
   memcpy(data_string + strlen(header), rgb24_buf[0], size);
 
-  VALUE ret = rb_str_new(data_string, size);
+  VALUE ret = rb_str_new(data_string, size+strlen(header));
   if (img_convert_ctx)
     sws_freeContext(img_convert_ctx);
   if(data_string)
@@ -132,7 +132,8 @@ frame_to_rawdata(VALUE self)
 static void
 free_frame(AVFrame * frame)
 {
-    av_frame_free(&frame);
+    if (frame)
+      av_frame_free(&frame);
 }
 
 static VALUE
@@ -154,7 +155,7 @@ frame_initialize(VALUE self, VALUE width, VALUE height, VALUE stride, VALUE pixe
     return self;
 }
 
-static VALUE
+static void
 frame_destroy(VALUE self)
 {
   AVFrame * frame = NULL;

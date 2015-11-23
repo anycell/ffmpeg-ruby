@@ -174,7 +174,6 @@ free_format(AVFormatContext * format_context)
 static VALUE
 alloc_format(VALUE klass)
 {
-    //fprintf(stderr, "allocating Format\n");
     AVFormatContext * format_context = avformat_alloc_context();
     VALUE obj;
     format_context->oformat = NULL;
@@ -184,15 +183,21 @@ alloc_format(VALUE klass)
     return obj;
 }
 
+static void
+format_destroy(VALUE self)
+{
+    AVFormatContext * format_context = NULL;
+    Data_Get_Struct(self, AVFormatContext, format_context);
+    if(format_context)
+      free_format(format_context);
+}
+
 void
 Init_FFMPEGFormat() {
-    //fprintf(stderr, "init FFMPEG Format\n");
     rb_cFFMPEGFormat = rb_define_class_under(rb_mFFMPEG, "Format", rb_cObject);
 
-    //fprintf(stderr, "init FFMPEG Format allocation\n");
     rb_define_alloc_func(rb_cFFMPEGFormat, alloc_format);
 
-    //fprintf(stderr, "init FFMPEG Format initialize\n");
     rb_define_method(rb_cFFMPEGFormat, "initialize", init_format, 0);
     rb_define_method(rb_cFFMPEGFormat, "filename", format_filename, 0);
     rb_define_method(rb_cFFMPEGFormat, "bit_rate", format_bit_rate, 0);
@@ -204,4 +209,5 @@ Init_FFMPEGFormat() {
     //rb_define_method(rb_cFFMPEGFormat, "has_stream_with_codec_type?", format_has_stream_with_codec_type, 1);
     rb_define_method(rb_cFFMPEGFormat, "has_video?", format_has_video, 0);
     rb_define_method(rb_cFFMPEGFormat, "has_audio?", format_has_audio, 0);
+    rb_define_method(rb_cFFMPEGFormat, "destory!", format_destroy, 0);
 }
