@@ -70,6 +70,8 @@ static VALUE
 stream_get_rotation(VALUE self)
 {
     AVStream *stream = get_stream(self);
+    if (!stream || !stream->metadata)
+        return Qnil;
     AVDictionaryEntry *rotate_tag = av_dict_get(stream->metadata, "rotate", NULL, 0);
     if(rotate_tag)
         return rb_str_new(rotate_tag->value, strlen(rotate_tag->value));
@@ -101,7 +103,6 @@ stream_seek(VALUE self, VALUE position)
 {
     AVFormatContext * format_context = get_format_context(rb_iv_get(self, "@format"));
     AVStream * stream = get_stream(self);
-
     int64_t timestamp = NUM2LONG(position) / av_q2d(stream->time_base);
 
     int ret;
@@ -207,7 +208,7 @@ extract_next_frame(AVFormatContext * format_context, AVCodecContext * codec_cont
 
     while(!frame_complete &&
             0 == (next = next_packet_for_stream(format_context, stream_index, decoding_packet))) {
-        //fprintf(stdout, "frame complete?: %d\n", frame_complete);
+        // fprintf(stderr, "frame complete?: %d\n", frame_complete);
         remaining = decoding_packet->size;
         databuffer = decoding_packet->data;
         while(remaining > 0) {
@@ -216,7 +217,6 @@ extract_next_frame(AVFormatContext * format_context, AVCodecContext * codec_cont
             remaining -= decoded;
             databuffer += decoded;
         }
-
     }
 
     return next;
