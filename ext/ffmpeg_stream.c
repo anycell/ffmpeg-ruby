@@ -200,7 +200,6 @@ extract_next_frame(AVFormatContext * format_context, AVCodecContext * codec_cont
     }
 
     uint8_t * databuffer;
-
     int remaining = 0;
     int decoded;
     int frame_complete = 0;
@@ -222,7 +221,6 @@ extract_next_frame(AVFormatContext * format_context, AVCodecContext * codec_cont
     return next;
 }
 
-// return audio buffer size
 static int
 extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_context,
     int stream_index, uint8_t **raw_data, AVPacket * decoding_packet)
@@ -232,12 +230,10 @@ extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_cont
     }
 
     uint8_t * databuffer;
-
     int remaining = 0;
     int decoded;
     int frame_complete = 0;
     int next;
-
     int buf_cap = 192000;
     int buf_size = 0;
     *raw_data = malloc(buf_cap);
@@ -284,6 +280,37 @@ extract_next_audio(AVFormatContext * format_context, AVCodecContext * codec_cont
         if(flag <= 0)
             break;
     }
+
+    av_packet_unref(decoding_packet);
+    decoding_packet->data = NULL;
+    decoding_packet->size = 0;
+    frame_complete = 0;
+    do {
+       if (decoding_packet->stream_index == stream_index) {
+          AVFrame *decoding_frame = NULL;
+          decoded = avcodec_decode_audio4(codec_context, decoding_frame,
+            &frame_complete, decoding_packet);
+          if (frame_complete) {
+              int out_linesize;
+              int out_size = av_samples_get_buffer_size(&out_linesize, codec_context->channels,
+                              decoding_frame->nb_samples, codec_context->sample_fmt, 1);
+
+              if ((buf_size+out_size)>=buf_cap){
+                  buf_cap *= 2;
+                  uint8_t *tmp = malloc(buf_cap);
+                  memcpy(tmp, *raw_data, buf_size);
+                  free(*raw_data);
+                  *raw_data = tmp;
+                  tmp = NULL;
+              }
+
+              memcpy(*raw_data+buf_size, decoding_frame->data[0], out_size);
+              buf_size += out_size;
+          }
+          fprintf(stderr, "[%d, %d]\n", decoded, frame_complete);
+          av_frame_free(&decoding_frame);
+       }
+    } while (frame_complete);
     return buf_size;
 }
 
@@ -384,6 +411,29 @@ stream_decode_frame(VALUE self)
                 )
             );
         } while (ret == 0);
+
+        av_packet_unref(&decoding_packet);
+        decoding_packet.data = NULL;
+        decoding_packet.size = 0;
+
+        int frame_complete;
+        do {
+           if (decoding_packet.stream_index == stream->index) {
+              ret = avcodec_decode_video2(stream->codec, frame,
+                &frame_complete, &decoding_packet);
+              if (frame_complete) {
+                  rb_yield(
+                      rb_ary_new3(
+                          3,
+                          rb_frame,
+                          rb_float_new(decoding_packet.pts * (double)av_q2d(stream->time_base)),
+                          rb_float_new(decoding_packet.dts * (double)av_q2d(stream->time_base))
+                      )
+                  );
+              }
+           }
+        } while (frame_complete);
+
     } else {
         int ret = extract_next_frame(format_context, stream->codec,
             stream->index, frame, &decoding_packet);
@@ -392,7 +442,7 @@ stream_decode_frame(VALUE self)
         if (ret != 0)
             return Qnil;
         return  rb_ary_new3(
-                    4,
+                    3,
                     rb_frame,
                     rb_float_new(decoding_packet.pts * (double)av_q2d(stream->time_base)),
                     rb_float_new(decoding_packet.dts * (double)av_q2d(stream->time_base))
