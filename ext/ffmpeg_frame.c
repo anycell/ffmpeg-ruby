@@ -36,7 +36,8 @@ frame_to_rawdata_rgb(VALUE self)
   sws_scale(img_convert_ctx, from->data, from->linesize,
       0, height, rgb24_buf, dst_linesize);
 
-  int size = dst_linesize[0]*height;
+  int stride = dst_linesize[0];
+  int size = stride*height;
   // fprintf(stderr, "RGB SIZE: %d, HEIGHT: %d, WIDTH: %d\n", size, height, width);
   // fprintf(stderr, "RGB LINESIZE: [%d, %d, %d, %d]\n", dst_linesize[0],
   //   dst_linesize[1], dst_linesize[2], dst_linesize[3]);
@@ -44,6 +45,8 @@ frame_to_rawdata_rgb(VALUE self)
   memcpy(data_string, rgb24_buf[0], size);
 
   VALUE ret = rb_str_new(data_string, size);
+  rb_iv_set(self, "@bytes", ret);
+  rb_iv_set(self, "@stride", INT2NUM(stride));
   if (img_convert_ctx)
     sws_freeContext(img_convert_ctx);
   if(data_string)
@@ -51,7 +54,7 @@ frame_to_rawdata_rgb(VALUE self)
   if(rgb24_buf)
     av_freep(&rgb24_buf[0]);
   data_string = NULL;
-  return ret;
+  return self;
 }
 
 static VALUE
@@ -83,7 +86,8 @@ frame_to_rawdata_bgra(VALUE self)
   sws_scale(img_convert_ctx, from->data, from->linesize,
       0, height, bgra_buf, dst_linesize);
 
-  int size = dst_linesize[0]*height;
+  int stride = dst_linesize[0];
+  int size = stride*height;
   // fprintf(stderr, "BGRA SIZE: %d, HEIGHT: %d, WIDTH: %d\n", size, height, width);
   // fprintf(stderr, "BGRA LINESIZE: [%d, %d, %d, %d]\n", dst_linesize[0],
   //   dst_linesize[1], dst_linesize[2], dst_linesize[3]);
@@ -91,6 +95,8 @@ frame_to_rawdata_bgra(VALUE self)
   memcpy(data_string, bgra_buf[0], size);
 
   VALUE ret = rb_str_new(data_string, size);
+  rb_iv_set(self, "@bytes", ret);
+  rb_iv_set(self, "@stride", INT2NUM(stride));
   if (img_convert_ctx)
     sws_freeContext(img_convert_ctx);
   if(data_string)
@@ -98,7 +104,7 @@ frame_to_rawdata_bgra(VALUE self)
   if(bgra_buf)
     av_freep(&bgra_buf[0]);
   data_string = NULL;
-  return ret;
+  return self;
 }
 
 static VALUE
@@ -118,10 +124,12 @@ frame_to_rawdata_gray(VALUE self)
     memcpy(data_string, frame->data[0], size);
 
     VALUE ret = rb_str_new(data_string, size);
+    rb_iv_set(self, "@bytes", ret);
+    rb_iv_set(self, "@stride", INT2NUM(stride));
     if(data_string)
       free(data_string);
     data_string = NULL;
-    return ret;
+    return self;
 }
 
 static VALUE
@@ -142,10 +150,12 @@ frame_to_rawdata_yuv(VALUE self)
     memcpy(data_string, frame->data[2], frame->linesize[2] * height);
 
     VALUE ret = rb_str_new(data_string, size);
+    rb_iv_set(self, "@bytes", ret);
+    rb_iv_set(self, "@stride", INT2NUM(stride));
     if(data_string)
       free(data_string);
     data_string = NULL;
-    return ret;
+    return self;
 }
 
 static void
@@ -171,6 +181,7 @@ frame_initialize(VALUE self, VALUE width, VALUE height, VALUE stride, VALUE pixe
     rb_iv_set(self, "@height", height);
     rb_iv_set(self, "@pixel_format", pixel_format);
     rb_iv_set(self, "@stride", stride);
+    rb_iv_set(self, "@btyes", Qnil);
     return self;
 }
 
@@ -206,7 +217,8 @@ Init_FFMPEGFrame() {
     rb_funcall(rb_cFFMPEGFrame, rb_intern("attr_reader"), 1, rb_sym("height"));
     rb_funcall(rb_cFFMPEGFrame, rb_intern("attr_reader"), 1, rb_sym("stride"));
     rb_funcall(rb_cFFMPEGFrame, rb_intern("attr_reader"), 1, rb_sym("pixel_format"));
-
+    rb_funcall(rb_cFFMPEGFrame, rb_intern("attr_reader"), 1, rb_sym("bytes"));
+    
     rb_define_method(rb_cFFMPEGFrame, "to_rgb", frame_to_rawdata_rgb, 0);
     rb_define_method(rb_cFFMPEGFrame, "to_gray", frame_to_rawdata_gray, 0);
     rb_define_method(rb_cFFMPEGFrame, "to_bgra", frame_to_rawdata_bgra, 0);

@@ -8,9 +8,7 @@ rescue LoadError
 end
 
 module FFMPEG
-
   class InputFormat
-
     def first_video_stream
       streams.find { |st| st.type == :video }
     end
@@ -25,11 +23,8 @@ module FFMPEG
   end
 
   class Stream
-
     def type
       codec.type
     end
-
   end
-
 end

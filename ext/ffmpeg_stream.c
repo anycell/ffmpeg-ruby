@@ -433,21 +433,8 @@ stream_decode_frame(VALUE self)
               }
            }
         } while (frame_complete);
-
-    } else {
-        int ret = extract_next_frame(format_context, stream->codec,
-            stream->index, frame, &decoding_packet);
-
-        av_free_packet(&decoding_packet);
-        if (ret != 0)
-            return Qnil;
-        return  rb_ary_new3(
-                    3,
-                    rb_frame,
-                    rb_float_new(decoding_packet.pts * (double)av_q2d(stream->time_base)),
-                    rb_float_new(decoding_packet.dts * (double)av_q2d(stream->time_base))
-                );
-    }
+    } else
+      rb_raise(rb_eRuntimeError, "no block given");
 
     av_free_packet(&decoding_packet);
     return self;
