@@ -124,6 +124,30 @@ frame_to_rawdata_gray(VALUE self)
     return ret;
 }
 
+static VALUE
+frame_to_rawdata_yuv(VALUE self)
+{
+    AVFrame *frame = get_frame(self);
+
+    int width = NUM2INT(rb_iv_get(self, "@width"));
+    int height = NUM2INT(rb_iv_get(self, "@height"));
+
+    int stride = frame->linesize[0] +
+                frame->linesize[1] +
+                frame->linesize[2];
+    int size = stride * height;
+    char *data_string = malloc(size);
+    memcpy(data_string, frame->data[0], frame->linesize[0] * height);
+    memcpy(data_string, frame->data[1], frame->linesize[1] * height);
+    memcpy(data_string, frame->data[2], frame->linesize[2] * height);
+
+    VALUE ret = rb_str_new(data_string, size);
+    if(data_string)
+      free(data_string);
+    data_string = NULL;
+    return ret;
+}
+
 static void
 free_frame(AVFrame * frame)
 {
@@ -186,5 +210,6 @@ Init_FFMPEGFrame() {
     rb_define_method(rb_cFFMPEGFrame, "to_rgb", frame_to_rawdata_rgb, 0);
     rb_define_method(rb_cFFMPEGFrame, "to_gray", frame_to_rawdata_gray, 0);
     rb_define_method(rb_cFFMPEGFrame, "to_bgra", frame_to_rawdata_bgra, 0);
+    rb_define_method(rb_cFFMPEGFrame, "to_yuv", frame_to_rawdata_yuv, 0);
     rb_define_method(rb_cFFMPEGFrame, "destroy!", frame_destroy, 0);
 }

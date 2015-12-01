@@ -56,24 +56,19 @@ VALUE codec_type_id_to_sym(int codec_type)
         case AVMEDIA_TYPE_AUDIO:
             type_sym = rb_sym("audio");
             break;
-        
         case AVMEDIA_TYPE_VIDEO:
             type_sym = rb_sym("video");
             break;
-        
         case AVMEDIA_TYPE_SUBTITLE:
             type_sym = rb_sym("subtitle");
             break;
-        
         case AVMEDIA_TYPE_DATA:
             type_sym = rb_sym("data");
             break;
-        
         case AVMEDIA_TYPE_ATTACHMENT:
             type_sym = rb_sym("attachment");
             break;
-        
-        case AVMEDIA_TYPE_NB:        
+        case AVMEDIA_TYPE_NB:
             type_sym = rb_sym("nb");
             break;
 
@@ -81,6 +76,5 @@ VALUE codec_type_id_to_sym(int codec_type)
             type_sym = rb_sym("unknown");
             break;
     }
-    
     return type_sym;
 }
