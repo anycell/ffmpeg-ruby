@@ -27,4 +27,10 @@ module FFMPEG
       codec.type
     end
   end
+
+  class Frame
+    alias_method :columns, :stride
+    alias_method :cols, :width
+    alias_method :rows, :height
+  end
 end

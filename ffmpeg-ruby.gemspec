@@ -1,6 +1,6 @@
 Gem::Specification.new do |spec|
   spec.name = 'ffmpeg-ruby'
-  spec.version = '0.1.2'
+  spec.version = '0.1.3'
   spec.summary = 'Ruby C bindings to ffmpeg/av library, especially usefull to extract thumbnails'
   spec.author = "Antonin Amand"
   spec.email = 'antonin.amand@gmail.com'
