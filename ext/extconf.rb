@@ -8,11 +8,13 @@ if find_executable('pkg-config')
   $CFLAGS << ' ' + `pkg-config libavutil --cflags`.strip
   $CFLAGS << ' ' + `pkg-config libswscale --cflags`.strip
   $CFLAGS << ' ' + `pkg-config libswresample --cflags`.strip
+=begin
   $LDFLAGS << ' ' + `pkg-config libavfilter --libs`.strip
   $LDFLAGS << ' ' + `pkg-config libavcodec --libs`.strip
   $LDFLAGS << ' ' + `pkg-config libavutil --libs`.strip
   $LDFLAGS << ' ' + `pkg-config libswscale --libs`.strip
   $LDFLAGS << ' ' + `pkg-config libswresample --libs`.strip
+=end
 end
 
 ffmpeg_include, ffmpeg_lib = dir_config("ffmpeg")
