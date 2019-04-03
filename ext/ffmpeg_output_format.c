@@ -42,12 +42,13 @@ static VALUE output_format_add_video_stream(VALUE self, VALUE codec_id_or_sym)
     if (format_context->nb_streams + 1 > MAX_STREAMS)
         rb_raise(rb_eRuntimeError, "over max stream count");
     
-    stream = av_new_stream(format_context, format_context->nb_streams);
+    stream = avformat_new_stream(format_context, NULL)
     
     if (!stream) {
         rb_raise(rb_eRuntimeError, "no memory");
     }
-    
+    stream->id = format_context->nb_streams;
+
     codec_context = stream->codec;
     codec_context->codec_id = codec_id;
     codec_context->codec_type = CODEC_TYPE_VIDEO;
