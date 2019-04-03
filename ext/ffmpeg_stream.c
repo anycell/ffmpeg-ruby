@@ -455,7 +455,8 @@ free_stream(AVStream * stream)
 static VALUE
 alloc_stream(VALUE klass)
 {
-    AVStream * stream = avformat_new_stream(NULL, 0);
+    AVFormatContext *oc = avformat_alloc_context();
+    AVStream * stream = avformat_new_stream(oc, NULL);
     return Data_Wrap_Struct(rb_cFFMPEGStream, 0, 0, stream);
 }
 
